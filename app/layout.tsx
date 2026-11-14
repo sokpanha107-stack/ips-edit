@@ -13,7 +13,10 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }, { url: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
-    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png', media: '(prefers-color-scheme: light)' },
+      { url: '/apple-touch-icon-dark.png', sizes: '180x180', type: 'image/png', media: '(prefers-color-scheme: dark)' },
+    ],
   },
   themeColor: [{ media: '(prefers-color-scheme: light)', color: '#d4c5b9' }, { media: '(prefers-color-scheme: dark)', color: '#0f172a' }],
   viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
