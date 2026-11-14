@@ -15,10 +15,12 @@ export const metadata: Metadata = {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }, { url: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
-  themeColor: '#d4c5b9',
+  themeColor: [{ media: '(prefers-color-scheme: light)', color: '#d4c5b9' }, { media: '(prefers-color-scheme: dark)', color: '#0f172a' }],
   viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en" data-theme="system"><body className={inter.className}>{children}</body></html>;
+  const themeScript = "try{var p=JSON.parse(localStorage.getItem('ips-prefs')||'{}');var d=document.documentElement;if(p.theme==='light'||p.theme==='dark')d.dataset.theme=p.theme;if(p.eyeCare)d.classList.add('eye-care')}catch(e){}";
+
+  return <html lang="en" data-theme="system" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head><body className={inter.className}>{children}</body></html>;
 }

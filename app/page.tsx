@@ -101,8 +101,13 @@ function BaseImageUploader({ t, image, locked, onImage, onLock, onNotice }: { t:
   return <div className={`upload-box ${dragging ? 'is-drag' : ''}`} onDragOver={(event) => { event.preventDefault(); if (canChange) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); accept(event.dataTransfer.files[0]); }}>{image ? <img className="base-thumb" src={image.url} alt={t.baseImage} /> : <Upload size={22} className="upload-icon" />}<div><strong>{image ? image.name : t.dropImage}</strong><span>{t.imageTypes}</span></div><button type="button" className="text-button" disabled={!canChange} onClick={() => inputRef.current?.click()}><Upload size={15} /> {image ? t.change : t.browse}</button><input ref={inputRef} type="file" accept="image/png,image/jpeg" hidden onChange={(event) => { accept(event.target.files?.[0]); event.target.value = ''; }} /><div className="lock-row"><Lock size={13} /> {t.baseImage} {locked ? t.locked : t.unlocked}<Toggle checked={locked} onChange={onLock} label={`${t.baseImage} ${locked ? t.unlocked : t.locked}`} /></div></div>;
 }
 
+function LogoMark({ className, size = 132 }: { className?: string; size?: number }) {
+  const shape = 'M13.5 .5H28.5A13 13 0 0 1 41.5 13.5V28.5A13 13 0 0 1 28.5 41.5H4.5A4 4 0 0 1 .5 37.5V13.5A13 13 0 0 1 13.5 .5Z';
+  return <svg className={className} viewBox="0 0 45 45" width={size} height={size} role="img" aria-label="IPS edit"><defs><linearGradient id="ips-logo-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#e2a047" /><stop offset="1" stopColor="#d97706" /></linearGradient></defs><path transform="translate(3 3)" fill="var(--ink)" d={shape} /><path fill="url(#ips-logo-g)" stroke="var(--ink)" strokeWidth="1" d={shape} /><g transform="translate(8.5 8.5) scale(1.0416667)" fill="none" stroke="#1e293b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m14 5-3 3 2 7 8-8-7-2Z" /><path d="m14 5-3 3-3-3 3-3 3 3Z" /><path d="M9.5 6.5 4 12l3 6" /><path d="M3 22v-2c0-1.1.9-2 2-2h4a2 2 0 0 1 2 2v2H3Z" /></g><path fill="#1e293b" d="M8.6 25.4 11.9 23.6V31.1Q11.9 31.6 12.7 31.6H13.5V32.8H7.6V31.6H8.4Q9.2 31.6 9.2 31.1V25.7Z" /></svg>;
+}
+
 function Splash({ leaving, onSkip, t }: { leaving: boolean; onSkip: () => void; t: Copy }) {
-  return <div className={`splash ${leaving ? 'is-leaving' : ''}`} onClick={onSkip} role="presentation"><div className="splash-inner"><img className="splash-logo" src="/logo.svg" alt="IPS edit" width={132} height={132} /><h1>IPS <em>edit</em></h1><p>{t.tagline}</p><div className="splash-bar"><i /></div></div></div>;
+  return <div className={`splash ${leaving ? 'is-leaving' : ''}`} onClick={onSkip} role="presentation"><div className="splash-inner"><LogoMark className="splash-logo" /><h1>IPS <em>edit</em></h1><p>{t.tagline}</p><div className="splash-bar"><i /></div></div></div>;
 }
 
 function EngineWorkspace({ type, t, voiceProfile, image, imageLocked, onImage, onLock, onNotice }: { type: 'video' | 'kh' | 'en'; t: Copy; voiceProfile?: Voice; image?: BaseImage; imageLocked?: boolean; onImage?: (file: File) => void; onLock?: () => void; onNotice: (message: string) => void }) {
@@ -150,7 +155,22 @@ export default function Home() {
   const [imageLocked, setImageLocked] = useState(false);
   const [splash, setSplash] = useState<'show' | 'leaving' | 'done'>('show');
 
-  useEffect(() => { document.documentElement.dataset.theme = themeMode; document.documentElement.classList.toggle('eye-care', eyeCare); }, [themeMode, eyeCare]);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('ips-prefs') || '{}');
+      if (['system', 'light', 'dark'].includes(saved.theme)) setThemeMode(saved.theme);
+      if (typeof saved.eyeCare === 'boolean') setEyeCare(saved.eyeCare);
+      if (saved.language === 'kh' || saved.language === 'en') setLanguage(saved.language);
+    } catch { /* storage unavailable */ }
+    setPrefsLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    document.documentElement.dataset.theme = themeMode;
+    document.documentElement.classList.toggle('eye-care', eyeCare);
+    try { window.localStorage.setItem('ips-prefs', JSON.stringify({ theme: themeMode, eyeCare, language })); } catch { /* storage unavailable */ }
+  }, [prefsLoaded, themeMode, eyeCare, language]);
   useEffect(() => { if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => undefined); }, []);
   useEffect(() => { if (splash === 'show') { const id = window.setTimeout(() => setSplash('leaving'), 2200); return () => window.clearTimeout(id); } if (splash === 'leaving') { const id = window.setTimeout(() => setSplash('done'), 600); return () => window.clearTimeout(id); } }, [splash]);
   useEffect(() => () => { if (baseImage) URL.revokeObjectURL(baseImage.url); }, [baseImage]);
