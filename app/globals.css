@@ -102,3 +102,27 @@ button, input, textarea { font: inherit; } button { color: inherit; } button:foc
 @keyframes splash-pop { from { opacity:0; transform:scale(.7); } to { opacity:1; transform:scale(1); } }
 @keyframes splash-rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 @keyframes splash-load { from { width:0; } to { width:100%; } }
+
+/* Job fields: folder name + scene count, verification */
+.job-fields { display:grid; grid-template-columns:minmax(0,1fr) 110px; gap:12px; }
+.scene-check { display:flex; align-items:center; gap:8px; margin:-6px 0 14px; padding:10px 12px; border-radius:8px; font-size:12px; line-height:1.4; }
+.scene-check.ok { color:var(--sage); background:rgba(101,163,123,.14); font-weight:600; }
+.scene-check.bad { color:#b91c1c; background:rgba(185,28,28,.09); font-weight:600; }
+.scene-check.neutral { color:var(--ink-soft); background:rgba(30,41,59,.05); }
+html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
+.job-summary { display:flex; align-items:center; gap:7px; margin-top:10px; color:var(--ink-soft); font-size:12px; font-weight:600; }
+.primary-button:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+.status-dot { white-space:nowrap; }
+
+/* Bottom navigation: larger, easier to tap */
+.bottom-nav { height:76px; padding:8px 6px calc(8px + env(safe-area-inset-bottom)); }
+.bottom-nav button { min-width:62px; gap:4px; font-size:11px; border-radius:14px; padding:4px 6px; }
+.bottom-nav button svg { width:25px; height:25px; }
+.bottom-nav button.active { background:rgba(180,83,9,.12); }
+@media (max-width: 760px) {
+  .workspace { padding-bottom:calc(112px + env(safe-area-inset-bottom)); }
+  .notice { bottom:96px; }
+  .status-dot { font-size:0; }
+  .status-dot span { width:9px; height:9px; }
+  .job-fields { grid-template-columns:minmax(0,1fr) 96px; gap:10px; }
+}
