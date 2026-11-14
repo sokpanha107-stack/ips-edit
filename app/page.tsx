@@ -102,7 +102,7 @@ function BaseImageUploader({ t, image, locked, onImage, onLock, onNotice }: { t:
 }
 
 function Splash({ leaving, onSkip, t }: { leaving: boolean; onSkip: () => void; t: Copy }) {
-  return <div className={`splash ${leaving ? 'is-leaving' : ''}`} onClick={onSkip} role="presentation"><div className="splash-inner"><img className="splash-logo" src="/icon.svg" alt="IPS edit" width={132} height={132} /><h1>IPS <em>Edit</em></h1><p>{t.tagline}</p><div className="splash-bar"><i /></div></div></div>;
+  return <div className={`splash ${leaving ? 'is-leaving' : ''}`} onClick={onSkip} role="presentation"><div className="splash-inner"><img className="splash-logo" src="/logo.svg" alt="IPS edit" width={132} height={132} /><h1>IPS <em>edit</em></h1><p>{t.tagline}</p><div className="splash-bar"><i /></div></div></div>;
 }
 
 function EngineWorkspace({ type, t, voiceProfile, image, imageLocked, onImage, onLock, onNotice }: { type: 'video' | 'kh' | 'en'; t: Copy; voiceProfile?: Voice; image?: BaseImage; imageLocked?: boolean; onImage?: (file: File) => void; onLock?: () => void; onNotice: (message: string) => void }) {
