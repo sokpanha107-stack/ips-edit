@@ -171,7 +171,15 @@ export default function Home() {
     document.documentElement.classList.toggle('eye-care', eyeCare);
     try { window.localStorage.setItem('ips-prefs', JSON.stringify({ theme: themeMode, eyeCare, language })); } catch { /* storage unavailable */ }
   }, [prefsLoaded, themeMode, eyeCare, language]);
-  useEffect(() => { if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    const onChange = () => { if (hadController && !reloaded) { reloaded = true; window.location.reload(); } };
+    navigator.serviceWorker.addEventListener('controllerchange', onChange);
+    navigator.serviceWorker.register('/sw.js').then((registration) => registration.update()).catch(() => undefined);
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', onChange);
+  }, []);
   useEffect(() => { if (splash === 'show') { const id = window.setTimeout(() => setSplash('leaving'), 2200); return () => window.clearTimeout(id); } if (splash === 'leaving') { const id = window.setTimeout(() => setSplash('done'), 600); return () => window.clearTimeout(id); } }, [splash]);
   useEffect(() => () => { if (baseImage) URL.revokeObjectURL(baseImage.url); }, [baseImage]);
   const showNotice = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 3200); };
