@@ -61,3 +61,44 @@ button, input, textarea { font: inherit; } button { color: inherit; } button:foc
   .voice-info { flex:1 1 0; }
   .send-button span { display:inline; }
 }
+
+/* Base image uploader */
+.upload-box { transition:border-color .18s, background .18s; }
+.upload-box.is-drag { border-color:var(--amber); background:rgba(217,119,6,.14); }
+.base-thumb { width:46px; height:46px; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
+.upload-box strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.upload-box > div:nth-of-type(1) { min-width:0; }
+.text-button:disabled { opacity:.4; cursor:not-allowed; }
+.lock-row .toggle { transform:none; margin-left:auto; }
+
+/* Voice Library select / delete */
+.library-tools { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
+.select-toggle { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--amber-deep); border-radius:999px; background:transparent; color:var(--amber-deep); padding:6px 13px; font-size:11px; font-weight:700; cursor:pointer; }
+.select-toggle.active { background:var(--amber-deep); color:#fff7ea; }
+.select-bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:10px 14px; margin-bottom:12px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.17); font-size:11px; }
+.select-all { display:flex; align-items:center; gap:8px; border:0; background:transparent; color:var(--ink); font-size:11px; font-weight:600; cursor:pointer; }
+.select-count { color:var(--ink-soft); }
+.trash-button { margin-left:auto; display:grid; place-items:center; width:36px; height:36px; border:0; border-radius:50%; background:#b91c1c; color:#fff; cursor:pointer; }
+.trash-button:disabled { opacity:.35; cursor:not-allowed; }
+.confirm-delete { margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.confirm-delete button { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--line); border-radius:999px; background:transparent; color:var(--ink); padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer; }
+.confirm-delete button.danger { background:#b91c1c; border-color:#b91c1c; color:#fff; }
+.check-box { display:grid; place-items:center; flex:0 0 20px; width:20px; height:20px; border:1.5px solid var(--amber-deep); border-radius:6px; color:#fff; }
+.check-box.checked { background:var(--amber-deep); }
+.voice-list .voice-card.is-picked { border-color:var(--amber); background:rgba(217,119,6,.1); }
+.voice-list .voice-card[role], .voice-card { cursor:default; }
+.library-empty { color:var(--ink-soft); font-size:12px; text-align:center; padding:28px 0; margin:0; }
+
+/* Splash screen */
+.splash { position:fixed; inset:0; z-index:100; display:grid; place-items:center; background:var(--paper); transition:opacity .55s ease, visibility .55s; cursor:pointer; }
+.splash.is-leaving { opacity:0; visibility:hidden; pointer-events:none; }
+.splash-inner { display:flex; flex-direction:column; align-items:center; text-align:center; padding:24px; }
+.splash-logo { width:132px; height:132px; border-radius:30px; box-shadow:6px 6px 0 var(--ink); animation:splash-pop .7s cubic-bezier(.2,.9,.3,1.2) both; }
+.splash h1 { margin:30px 0 6px; font:700 clamp(38px,8vw,56px)/1.05 Georgia,serif; letter-spacing:-1.5px; animation:splash-rise .6s .25s ease-out both; }
+.splash h1 em { color:var(--amber-deep); font-weight:400; }
+.splash p { margin:0; color:var(--ink-soft); font-size:12px; letter-spacing:.32em; text-transform:uppercase; animation:splash-rise .6s .4s ease-out both; }
+.splash-bar { width:120px; height:3px; margin-top:34px; border-radius:3px; background:var(--line); overflow:hidden; }
+.splash-bar i { display:block; height:100%; background:var(--amber); animation:splash-load 2.2s ease-in-out both; }
+@keyframes splash-pop { from { opacity:0; transform:scale(.7); } to { opacity:1; transform:scale(1); } }
+@keyframes splash-rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@keyframes splash-load { from { width:0; } to { width:100%; } }
