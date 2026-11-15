@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, ClipboardPaste, Copy, Languages, ListChecks, Play, Scissors, Square, Volume2, X } from 'lucide-react';
+import { ArrowLeftRight, ClipboardPaste, Copy, Languages, ListChecks, Play, Scissors, Square, Undo2, Volume2, X } from 'lucide-react';
 import { api, splitScenes } from '@/lib/client/api';
 import { breakScript, detectLang, PRESET_MAX, type Lang, type Preset } from '@/lib/client/scriptTools';
 
 const copy = {
   en: {
+    prepare: 'Prepare Script', breakBtn: 'Break into lines', undo: 'Undo', copyScript: 'Copy Script', useResult: 'Use as script', lineCount: 'lines',
     format: 'Format', translate: 'Translate', preview: 'Preview',
     formatTitle: 'Script formatter', rawPh: 'Paste your raw script here…', output: 'Formatted lines', lines: 'lines', numbered: 'Number the lines (Scene 01:)',
     short: 'Short', medium: 'Medium', long: 'Long', paste: 'Paste', copy: 'Copy', copied: 'Copied', insert: 'Use in Batch Scripts', nothing: 'Nothing to copy yet', clear: 'Clear',
@@ -16,6 +17,7 @@ const copy = {
     noKm: 'This device has no Khmer voice, so Khmer lines may be silent or read wrongly. Install one in Settings > Accessibility > Spoken Content > Voices.', unsupported: 'Speech is not supported in this browser.', spoke: 's',
   },
   kh: {
+    prepare: 'រៀបចំ Script', breakBtn: 'កាត់ជាបន្ទាត់', undo: 'ត្រឡប់វិញ', copyScript: 'Copy Script', useResult: 'ប្រើជា script', lineCount: 'បន្ទាត់',
     format: 'រៀបចំ', translate: 'បកប្រែ', preview: 'ស្តាប់សាកល្បង',
     formatTitle: 'រៀបចំ Script', rawPh: 'បិទភ្ជាប់ script ដើមនៅទីនេះ…', output: 'បន្ទាត់ដែលបានរៀបចំ', lines: 'បន្ទាត់', numbered: 'ដាក់លេខបន្ទាត់ (Scene 01:)',
     short: 'ខ្លី', medium: 'មធ្យម', long: 'វែង', paste: 'បិទភ្ជាប់', copy: 'Copy', copied: 'បាន Copy', insert: 'ប្រើក្នុង Batch Scripts', nothing: 'មិនទាន់មានអ្វីត្រូវ Copy', clear: 'សម្អាត',
@@ -39,71 +41,12 @@ export async function copyText(text: string): Promise<boolean> {
   return ok;
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="tool-modal" role="dialog" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
     <div className="drawer-header"><h2>{title}</h2><button type="button" className="icon-button" onClick={onClose} aria-label="Close"><X size={20} /></button></div>
     <div className="tool-body">{children}</div>
+    {footer && <div className="tool-foot">{footer}</div>}
   </div></div>;
-}
-
-function FormatterModal({ c, onClose, onInsert, onNotice }: { c: C; onClose: () => void; onInsert: (text: string) => void; onNotice: (m: string) => void }) {
-  const [raw, setRaw] = useState('');
-  const [preset, setPreset] = useState<Preset>('medium');
-  const [numbered, setNumbered] = useState(false);
-  const lines = useMemo(() => breakScript(raw, preset, numbered), [raw, preset, numbered]);
-  const out = lines.join('\n');
-  const doCopy = async () => { if (!out) { onNotice(c.nothing); return; } onNotice((await copyText(out)) ? c.copied : 'Copy failed'); };
-  const paste = async () => { try { setRaw(await navigator.clipboard.readText()); } catch { onNotice('Paste blocked: long-press the box and choose Paste.'); } };
-  return <Modal title={c.formatTitle} onClose={onClose}>
-    <div className="tool-row"><button type="button" className="text-button" onClick={paste}><ClipboardPaste size={14} /> {c.paste}</button>{raw && <button type="button" className="text-button" onClick={() => setRaw('')}>{c.clear}</button>}</div>
-    <textarea className="studio-input tool-area" value={raw} placeholder={c.rawPh} onChange={(e) => setRaw(e.target.value)} />
-    <div className="tool-row"><div className="chip-row">{(['short', 'medium', 'long'] as Preset[]).map((p) => <button key={p} type="button" className={`chip ${preset === p ? 'on' : ''}`} onClick={() => setPreset(p)}>{c[p]} · {PRESET_MAX[p]}</button>)}</div>
-      <label className="check-label"><input type="checkbox" checked={numbered} onChange={(e) => setNumbered(e.target.checked)} /> {c.numbered}</label></div>
-    <div className="tool-label">{c.output} · {lines.length} {c.lines}</div>
-    <textarea className="studio-input tool-area out" readOnly value={out} />
-    <button type="button" className="primary-button big-copy" onClick={doCopy}><Copy size={16} /> {c.copy}</button>
-    <button type="button" className="text-button" onClick={() => { if (out) { onInsert(out); onClose(); } else onNotice(c.nothing); }}><ListChecks size={14} /> {c.insert}</button>
-  </Modal>;
-}
-
-function TranslateModal({ c, onClose, onInsert, onNotice }: { c: C; onClose: () => void; onInsert: (text: string) => void; onNotice: (m: string) => void }) {
-  const [from, setFrom] = useState<Lang>('km');
-  const [src, setSrc] = useState('');
-  const [out, setOut] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const to: Lang = from === 'km' ? 'en' : 'km';
-  const name = (l: Lang) => (l === 'km' ? c.khmer : c.english);
-  const onType = (v: string) => { setSrc(v); if (v.trim().length > 3) { const d = detectLang(v); if (d !== from) setFrom(d); } };
-  const swap = () => { setFrom(to); setSrc(out); setOut(src); setError(''); };
-  const go = async () => {
-    if (!src.trim()) return;
-    setBusy(true); setError('');
-    try {
-      const r = await api.translate(src, from, to);
-      if (r.ok && r.text !== undefined) setOut(r.text); else setError(r.error === 'quota' ? c.quota : `${c.failed}${r.error ? `: ${r.error}` : ''}`);
-    } catch (e) { setError(e instanceof Error ? e.message : c.failed); }
-    setBusy(false);
-  };
-  const speak = (text: string, lang: Lang) => {
-    if (!('speechSynthesis' in window) || !text) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text); u.lang = lang === 'km' ? 'km-KH' : 'en-US'; window.speechSynthesis.speak(u);
-  };
-  return <Modal title={c.transTitle} onClose={onClose}>
-    <div className="lang-bar"><span className="lang-pill">{name(from)}</span><button type="button" className="icon-button" onClick={swap} aria-label={c.swap}><ArrowLeftRight size={16} /></button><span className="lang-pill">{name(to)}</span></div>
-    <div className="trans-grid">
-      <div className="trans-pane"><textarea className="studio-input tool-area" value={src} placeholder={c.typeHere} onChange={(e) => onType(e.target.value)} />
-        <div className="pane-foot"><span>{src.length}/3000</span><button type="button" className="icon-button sm" onClick={() => speak(src, from)} aria-label={c.speak}><Volume2 size={14} /></button>{src && <button type="button" className="icon-button sm" onClick={() => { setSrc(''); setOut(''); }} aria-label={c.clear}><X size={14} /></button>}</div></div>
-      <div className="trans-pane out"><textarea className="studio-input tool-area" readOnly value={busy ? c.working : out} placeholder={c.result} />
-        <div className="pane-foot"><button type="button" className="icon-button sm" onClick={() => speak(out, to)} aria-label={c.speak}><Volume2 size={14} /></button>
-          <button type="button" className="icon-button sm" onClick={async () => onNotice(out ? ((await copyText(out)) ? c.copied : 'Copy failed') : c.nothing)} aria-label={c.copy}><Copy size={14} /></button></div></div>
-    </div>
-    {error && <div className="access-status bad">{error}</div>}
-    <button type="button" className="primary-button big-copy" onClick={go} disabled={busy || !src.trim()}><Languages size={16} /> {busy ? c.working : c.go}</button>
-    <button type="button" className="text-button" onClick={() => { if (out) { onInsert(out); onClose(); } else onNotice(c.nothing); }}><ListChecks size={14} /> {c.insert}</button>
-    <p className="access-help">{c.proof}</p>
-  </Modal>;
 }
 
 function PreviewPanel({ c, script, anchor }: { c: C; script: string; anchor: number[] }) {
@@ -151,7 +94,7 @@ function PreviewPanel({ c, script, anchor }: { c: C; script: string; anchor: num
   };
   useEffect(() => () => { runId.current += 1; }, []);
 
-  if (!supported) return <div className="preview-panel"><p className="access-help">{c.unsupported}</p></div>;
+  if (!supported) return <div className="preview-panel flat"><p className="access-help">{c.unsupported}</p></div>;
   const needsKm = lines.some((l) => detectLang(l) === 'km') && !hasKm;
   return <div className="preview-panel">
     <div className="tool-label">{c.previewTitle}</div>
@@ -171,18 +114,92 @@ function PreviewPanel({ c, script, anchor }: { c: C; script: string; anchor: num
   </div>;
 }
 
-export function ScriptToolbar({ language, script, anchor, onScript, onNotice }: { language: Language; script: string; anchor: number[]; onScript: (text: string) => void; onNotice: (m: string) => void }) {
-  const c = copy[language];
-  const [modal, setModal] = useState<'format' | 'translate' | null>(null);
-  const [preview, setPreview] = useState(false);
-  return <>
-    <div className="script-toolbar">
-      <button type="button" className="tool-button" onClick={() => setModal('format')}><Scissors size={14} /> {c.format}</button>
-      <button type="button" className="tool-button" onClick={() => setModal('translate')}><Languages size={14} /> {c.translate}</button>
-      <button type="button" className={`tool-button ${preview ? 'on' : ''}`} onClick={() => setPreview((v) => !v)}><Volume2 size={14} /> {c.preview}</button>
+type Tab = 'format' | 'translate' | 'preview';
+
+function Workspace({ c, language, initial, anchor, onClose, onInsert, onNotice, state }: {
+  c: C; language: Language; initial: string; anchor: number[]; onClose: () => void; onInsert: (text: string) => void; onNotice: (m: string) => void;
+  state: { text: string; setText: (v: string) => void };
+}) {
+  const { text, setText } = state;
+  const [tab, setTab] = useState<Tab>('format');
+  const [preset, setPreset] = useState<Preset>('medium');
+  const [numbered, setNumbered] = useState(false);
+  const [undo, setUndo] = useState<string[]>([]);
+  const [from, setFrom] = useState<Lang>('km');
+  const [out, setOut] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const to: Lang = from === 'km' ? 'en' : 'km';
+  const name = (l: Lang) => (l === 'km' ? c.khmer : c.english);
+  const lineCount = text.split(/\r?\n/).filter((l) => l.trim()).length;
+
+  useEffect(() => { if (!text && initial) setText(initial); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const change = (v: string) => { setText(v); if (v.trim().length > 3) { const d = detectLang(v); if (d !== from) setFrom(d); } };
+  const replaceText = (v: string) => { setUndo((u) => [...u.slice(-9), text]); setText(v); };
+  const doBreak = () => { if (!text.trim()) { onNotice(c.nothing); return; } replaceText(breakScript(text, preset, numbered).join('\n')); };
+  const paste = async () => { try { change(await navigator.clipboard.readText()); } catch { onNotice('Paste blocked: long-press the box and choose Paste.'); } };
+  const doCopy = async () => { if (!text.trim()) { onNotice(c.nothing); return; } onNotice((await copyText(text)) ? c.copied : 'Copy failed'); };
+  const go = async () => {
+    if (!text.trim()) return;
+    setBusy(true); setError('');
+    try {
+      const r = await api.translate(text, from, to);
+      if (r.ok && r.text !== undefined) setOut(r.text); else setError(r.error === 'quota' ? c.quota : `${c.failed}${r.error ? `: ${r.error}` : ''}`);
+    } catch (e) { setError(e instanceof Error ? e.message : c.failed); }
+    setBusy(false);
+  };
+  const speak = (t: string, lang: Lang) => {
+    if (!('speechSynthesis' in window) || !t) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(t); u.lang = lang === 'km' ? 'km-KH' : 'en-US'; window.speechSynthesis.speak(u);
+  };
+
+  const footer = <>
+    <button type="button" className="primary-button big-copy" onClick={doCopy}><Copy size={16} /> {c.copyScript}</button>
+    <button type="button" className="text-button" onClick={() => { if (text.trim()) { onInsert(text); onClose(); } else onNotice(c.nothing); }}><ListChecks size={14} /> {c.insert}</button>
+  </>;
+
+  return <Modal title={c.prepare} onClose={onClose} footer={footer}>
+    <div className="tool-row">
+      <button type="button" className="text-button" onClick={paste}><ClipboardPaste size={14} /> {c.paste}</button>
+      <span className="tool-count">{lineCount} {c.lineCount}</span>
+      <span className="tool-actions">{undo.length > 0 && <button type="button" className="text-button" onClick={() => { setText(undo[undo.length - 1]); setUndo((u) => u.slice(0, -1)); }}><Undo2 size={14} /> {c.undo}</button>}
+        {text && <button type="button" className="text-button" onClick={() => { setText(''); setOut(''); setUndo([]); }}>{c.clear}</button>}</span>
     </div>
-    {preview && <PreviewPanel c={c} script={script} anchor={anchor} />}
-    {modal === 'format' && <FormatterModal c={c} onClose={() => setModal(null)} onInsert={onScript} onNotice={onNotice} />}
-    {modal === 'translate' && <TranslateModal c={c} onClose={() => setModal(null)} onInsert={onScript} onNotice={onNotice} />}
+    <textarea className="studio-input tool-area" value={text} placeholder={c.rawPh} onChange={(e) => change(e.target.value)} />
+    <div className="tool-tabs" role="tablist">
+      {([['format', Scissors, c.format], ['translate', Languages, c.translate], ['preview', Volume2, c.preview]] as const).map(([k, Icon, label]) =>
+        <button key={k} type="button" role="tab" aria-selected={tab === k} className={`tool-tab ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}><Icon size={14} /> {label}</button>)}
+    </div>
+
+    {tab === 'format' && <div className="tool-section">
+      <div className="chip-row">{(['short', 'medium', 'long'] as Preset[]).map((p) => <button key={p} type="button" className={`chip ${preset === p ? 'on' : ''}`} onClick={() => setPreset(p)}>{c[p]} · {PRESET_MAX[p]}</button>)}</div>
+      <label className="check-label"><input type="checkbox" checked={numbered} onChange={(e) => setNumbered(e.target.checked)} /> {c.numbered}</label>
+      <button type="button" className="primary-button" onClick={doBreak}><Scissors size={15} /> {c.breakBtn}</button>
+    </div>}
+
+    {tab === 'translate' && <div className="tool-section">
+      <div className="lang-bar"><span className="lang-pill">{name(from)}</span><button type="button" className="icon-button" onClick={() => { setFrom(to); if (out) { replaceText(out); setOut(''); } }} aria-label={c.swap}><ArrowLeftRight size={16} /></button><span className="lang-pill">{name(to)}</span></div>
+      <textarea className="studio-input tool-area out" readOnly value={busy ? c.working : out} placeholder={c.result} />
+      <div className="pane-foot"><button type="button" className="icon-button sm" onClick={() => speak(out, to)} aria-label={c.speak}><Volume2 size={14} /></button>
+        <button type="button" className="icon-button sm" onClick={async () => onNotice(out ? ((await copyText(out)) ? c.copied : 'Copy failed') : c.nothing)} aria-label={c.copy}><Copy size={14} /></button>
+        <button type="button" className="text-button" onClick={() => { if (out) { replaceText(out); setOut(''); } else onNotice(c.nothing); }}>{c.useResult}</button></div>
+      {error && <div className="access-status bad">{error}</div>}
+      <button type="button" className="primary-button" onClick={go} disabled={busy || !text.trim()}><Languages size={15} /> {busy ? c.working : c.go}</button>
+      <p className="access-help">{c.proof}</p>
+    </div>}
+
+    {tab === 'preview' && <PreviewPanel c={c} script={text} anchor={anchor} />}
+  </Modal>;
+}
+
+/** One clean button; everything about preparing a script lives in the modal it opens. The text is kept while the modal is closed. */
+export function PrepareScriptButton({ language, script, anchor, onScript, onNotice }: { language: Language; script: string; anchor: number[]; onScript: (text: string) => void; onNotice: (m: string) => void }) {
+  const c = copy[language];
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  return <>
+    <button type="button" className="prepare-button" onClick={() => setOpen(true)}><Scissors size={15} /> {c.prepare}</button>
+    {open && <Workspace c={c} language={language} initial={script} anchor={anchor} state={{ text, setText }} onClose={() => setOpen(false)} onInsert={onScript} onNotice={onNotice} />}
   </>;
 }
