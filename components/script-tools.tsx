@@ -8,7 +8,7 @@ import { breakScript, detectLang, PRESET_MAX, type Lang, type Preset } from '@/l
 const copy = {
   en: {
     check: 'Check', pasteHere: 'Paste text', arranged: 'Arranged lines', rearrange: 'Re-arrange', edited: 'Edited by hand. Re-arrange rebuilds it from the pasted text.', alignLeft: 'Left', alignCenter: 'Center', alignRight: 'Right', useAsInput: 'Use as input',
-    prepare: 'Prepare Script', breakBtn: 'Break into lines', undo: 'Undo', copyScript: 'Copy Script', useResult: 'Use as script', lineCount: 'lines',
+    prepare: 'Script Preparation', sendTo: 'Send to', sentTo: 'Sent to', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'Break into lines', undo: 'Undo', copyScript: 'Copy Script', useResult: 'Use as script', lineCount: 'lines',
     format: 'Format', translate: 'Translate', preview: 'Preview',
     formatTitle: 'Script formatter', rawPh: 'Paste your raw script here…', output: 'Formatted lines', lines: 'lines', numbered: 'Number the lines (Scene 01:)',
     short: 'Short', medium: 'Medium', long: 'Long', paste: 'Paste', copy: 'Copy', copied: 'Copied', insert: 'Use in Batch Scripts', nothing: 'Nothing to copy yet', clear: 'Clear',
@@ -19,7 +19,7 @@ const copy = {
   },
   kh: {
     check: 'ពិនិត្យ', pasteHere: 'បិទភ្ជាប់អត្ថបទ', arranged: 'អត្ថបទរៀបជាជួរ', rearrange: 'រៀបចំម្តងទៀត', edited: 'អ្នកបានកែដោយដៃ។ ចុច "រៀបចំម្តងទៀត" ដើម្បីបង្កើតឡើងវិញពីអត្ថបទដែលបានបិទភ្ជាប់។', alignLeft: 'ឆ្វេង', alignCenter: 'កណ្តាល', alignRight: 'ស្តាំ', useAsInput: 'ប្រើជាអត្ថបទដើម',
-    prepare: 'រៀបចំ Script', breakBtn: 'កាត់ជាបន្ទាត់', undo: 'ត្រឡប់វិញ', copyScript: 'Copy Script', useResult: 'ប្រើជា script', lineCount: 'បន្ទាត់',
+    prepare: 'Script Preparation', sendTo: 'ផ្ញើទៅ', sentTo: 'បានផ្ញើទៅ', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'កាត់ជាបន្ទាត់', undo: 'ត្រឡប់វិញ', copyScript: 'Copy Script', useResult: 'ប្រើជា script', lineCount: 'បន្ទាត់',
     format: 'រៀបចំ', translate: 'បកប្រែ', preview: 'ស្តាប់សាកល្បង',
     formatTitle: 'រៀបចំ Script', rawPh: 'បិទភ្ជាប់ script ដើមនៅទីនេះ…', output: 'បន្ទាត់ដែលបានរៀបចំ', lines: 'បន្ទាត់', numbered: 'ដាក់លេខបន្ទាត់ (Scene 01:)',
     short: 'ខ្លី', medium: 'មធ្យម', long: 'វែង', paste: 'បិទភ្ជាប់', copy: 'Copy', copied: 'បាន Copy', insert: 'ប្រើក្នុង Batch Scripts', nothing: 'មិនទាន់មានអ្វីត្រូវ Copy', clear: 'សម្អាត',
@@ -120,9 +120,11 @@ type Tab = 'check' | 'translate' | 'preview';
 type Align = 'left' | 'center' | 'right';
 const NEXT_ALIGN: Record<Align, Align> = { center: 'left', left: 'right', right: 'center' };
 
-/** Always mounted (so nothing is lost when closed); renders the modal only while open. */
-function Workspace({ open, c, initial, anchor, onClose, onInsert, onNotice }: {
-  open: boolean; c: C; initial: string; anchor: number[]; onClose: () => void; onInsert: (text: string) => void; onNotice: (m: string) => void;
+type Target = 'kh' | 'en' | 'video';
+
+/** The standalone Script Preparation workspace (a normal screen, not a modal). */
+function Workspace({ c, anchor, onSend, onNotice }: {
+  c: C; anchor: number[]; onSend: (target: Target, text: string) => void; onNotice: (m: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>('check');
   const [text, setText] = useState('');            // what the user pastes
@@ -140,11 +142,9 @@ function Workspace({ open, c, initial, anchor, onClose, onInsert, onNotice }: {
   const lineCount = arranged.split(/\r?\n/).filter((l) => l.trim()).length;
   const AlignIcon = align === 'left' ? AlignLeft : align === 'right' ? AlignRight : AlignCenter;
 
-  useEffect(() => { if (open && !text && initial) setText(initial); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   // live: rebuild the arranged lines whenever the pasted text or the settings change (unless edited by hand)
   useEffect(() => { if (!dirty) setArranged(breakScript(text, preset, numbered).join('\n')); }, [text, preset, numbered, dirty]);
 
-  if (!open) return null;
   const change = (v: string) => { setText(v); if (v.trim().length > 3) { const d = detectLang(v); if (d !== from) setFrom(d); } };
   const paste = async () => { try { change(await navigator.clipboard.readText()); } catch { onNotice('Paste blocked: long-press the box and choose Paste.'); } };
   const rearrange = () => { setDirty(false); setArranged(breakScript(text, preset, numbered).join('\n')); };
@@ -165,12 +165,10 @@ function Workspace({ open, c, initial, anchor, onClose, onInsert, onNotice }: {
     const u = new SpeechSynthesisUtterance(t); u.lang = lang === 'km' ? 'km-KH' : 'en-US'; window.speechSynthesis.speak(u);
   };
 
-  const footer = <>
-    <button type="button" className="primary-button big-copy" onClick={doCopy}><Copy size={16} /> {c.copyScript}</button>
-    <button type="button" className="text-button" onClick={() => { if (result.trim()) { onInsert(result); onClose(); } else onNotice(c.nothing); }}><ListChecks size={14} /> {c.insert}</button>
-  </>;
+  const send = (t: Target) => { if (result.trim()) { onSend(t, result); onNotice(`${c.sentTo} ${t === 'kh' ? c.khEngine : t === 'en' ? c.enEngine : c.videoEngine}`); } else onNotice(c.nothing); };
 
-  return <Modal title={c.prepare} onClose={onClose} footer={footer}>
+  return <section className="screen-card script-screen">
+    <div className="screen-heading"><div className="section-heading"><div className="heading-icon"><Scissors size={18} /></div><div className="heading-only"><span className="eyebrow">{c.prepare}</span></div></div></div>
     <div className="tool-tabs" role="tablist">
       {([['check', Scissors, c.check], ['translate', Languages, c.translate], ['preview', Volume2, c.preview]] as const).map(([k, Icon, label]) =>
         <button key={k} type="button" role="tab" aria-selected={tab === k} className={`tool-tab ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}><Icon size={14} /> {label}</button>)}
@@ -210,15 +208,14 @@ function Workspace({ open, c, initial, anchor, onClose, onInsert, onNotice }: {
     </div>}
 
     {tab === 'preview' && <PreviewPanel c={c} script={result} anchor={anchor} />}
-  </Modal>;
+    <div className="tool-foot">
+      <button type="button" className="primary-button big-copy" onClick={doCopy}><Copy size={16} /> {c.copyScript}</button>
+      <div className="send-row"><span className="tool-label">{c.sendTo}</span>
+        {(['kh', 'video', 'en'] as Target[]).map((t) => <button key={t} type="button" className="text-button send-chip" onClick={() => send(t)}><ListChecks size={13} /> {t === 'kh' ? c.khEngine : t === 'en' ? c.enEngine : c.videoEngine}</button>)}</div>
+    </div>
+  </section>;
 }
 
-/** One clean button; everything about preparing a script lives in the modal it opens. Text is kept while the modal is closed. */
-export function PrepareScriptButton({ language, script, anchor, onScript, onNotice }: { language: Language; script: string; anchor: number[]; onScript: (text: string) => void; onNotice: (m: string) => void }) {
-  const c = copy[language];
-  const [open, setOpen] = useState(false);
-  return <>
-    <button type="button" className="prepare-button" onClick={() => setOpen(true)}><Scissors size={15} /> {c.prepare}</button>
-    <Workspace open={open} c={c} initial={script} anchor={anchor} onClose={() => setOpen(false)} onInsert={onScript} onNotice={onNotice} />
-  </>;
+export function ScriptPrepScreen({ language, anchor, onSend, onNotice }: { language: Language; anchor: number[]; onSend: (target: Target, text: string) => void; onNotice: (m: string) => void }) {
+  return <Workspace c={copy[language]} anchor={anchor} onSend={onSend} onNotice={onNotice} />;
 }
