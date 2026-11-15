@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, getAccessKey, imageToDataUrl, isFinished, setAccessKey, splitScenes, type JobView } from '@/lib/client/api';
 import {
-  AudioLines, Check, ChevronRight, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
+  AudioLines, Check, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
   Folder, Palette, Play, Radio, Send, Settings2, ShieldCheck, Sun, Trash2, Upload, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 
@@ -203,10 +203,37 @@ function CommandCenter({ open, onClose, t, gpus, setGpu }: { open: boolean; onCl
   return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><h2>{t.commandCenter}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div><div className="drawer-content"><div className="gpu-controls">{controls.map(([key, label]) => <div className="gpu-control" key={key}><strong>{label}</strong><div className="gpu-state"><span className={gpus[key].enabled ? 'ready-indicator' : gpus[key].connecting ? 'connecting-indicator' : 'off-indicator'} />{gpus[key].connecting ? t.connecting : gpus[key].enabled ? t.gpuOn : t.gpuOff}<Toggle checked={gpus[key].enabled} connecting={gpus[key].connecting} onChange={() => setGpu(key)} label={`${label} ${gpus[key].enabled ? t.gpuOff : t.gpuOn}`} /></div></div>)}</div><div className="performance-panel"><div className="performance-heading"><h3>{t.performance}</h3><Gauge size={19} /></div><div className="gpu-monitor-grid"><article><span>RTX 4090</span><strong>24 GB</strong><small>{t.vram}</small><div className="usage-bar"><i style={{ width: '68%' }} /></div></article><article><span>Storage disk</span><strong>186 GB</strong><small>{t.storage}</small><div className="usage-bar"><i style={{ width: '42%' }} /></div></article><article><span>{t.activeTasks}</span><strong>02</strong><div className="task-pips"><i /><i /><i /></div></article></div></div></div><button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.done}</button></aside></div>;
 }
 
+type Health = { storage: string; auth: string; providers: { video: string; voice: string } };
+function AccessKeyField({ t, language }: { t: Copy; language: Language }) {
+  const kh = language === 'kh';
+  const [value, setValue] = useState('');
+  const [show, setShow] = useState(false);
+  const [state, setState] = useState<{ kind: 'idle' | 'testing' | 'ok' | 'bad'; text: string }>({ kind: 'idle', text: '' });
+  useEffect(() => { setValue(getAccessKey()); }, []);
+  const test = async () => {
+    setAccessKey(value);
+    setState({ kind: 'testing', text: kh ? 'កំពុងភ្ជាប់…' : 'Connecting…' });
+    try {
+      const health: Health = await (await fetch('/api/health', { cache: 'no-store' })).json();
+      await api.listJobs();
+      const store = health.storage.startsWith('supabase') ? 'Supabase ✓' : (kh ? 'Memory (មិនទាន់ភ្ជាប់ Supabase)' : 'Memory (Supabase not connected)');
+      setState({ kind: 'ok', text: `${kh ? 'ភ្ជាប់បាន' : 'Connected'} · ${store} · video: ${health.providers.video} · voice: ${health.providers.voice}` });
+    } catch (error) {
+      setState({ kind: 'bad', text: error instanceof Error ? error.message : (kh ? 'ភ្ជាប់មិនបាន' : 'Could not connect') });
+    }
+  };
+  return <div className="access-field">
+    <div className="access-row"><input className="studio-input" type={show ? 'text' : 'password'} aria-label={t.apiKey} placeholder={t.apiPlaceholder} value={value} autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={(event) => { setValue(event.target.value); setAccessKey(event.target.value); setState({ kind: 'idle', text: '' }); }} /><button type="button" className="icon-button access-eye" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide' : 'Show'}>{show ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+    <p className="access-help">{kh ? 'ដាក់ពាក្យសម្ងាត់ដូចគ្នានឹង IPS_ACCESS_KEY ក្នុង Vercel។ រក្សាទុកក្នុងឧបករណ៍នេះប៉ុណ្ណោះ។' : 'Use the same value as IPS_ACCESS_KEY in Vercel. Stored on this device only.'}</p>
+    <button type="button" className="access-test" onClick={test} disabled={state.kind === 'testing'}><ShieldCheck size={14} /> {kh ? 'រក្សាទុក និងតេស្តការភ្ជាប់' : 'Save & test connection'}</button>
+    {state.kind !== 'idle' && <div className={`access-status ${state.kind}`}>{state.text}</div>}
+  </div>;
+}
+
 function SettingsDrawer({ open, onClose, t, language, setLanguage, themeMode, setThemeMode, eyeCare, setEyeCare }: { open: boolean; onClose: () => void; t: Copy; language: Language; setLanguage: (language: Language) => void; themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; eyeCare: boolean; setEyeCare: () => void }) {
   if (!open) return null;
   const themes: [ThemeMode, string, LucideIcon][] = [['system', t.system, Radio], ['light', t.light, Sun], ['dark', t.dark, Moon]];
-  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><h2>{t.settings}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div><div className="drawer-content"><div className="settings-block"><div className="settings-title"><Lock size={17} /><strong>{t.apiTitle}</strong></div><input className="studio-input" type="password" aria-label={t.apiKey} placeholder={t.apiPlaceholder} defaultValue={getAccessKey()} onChange={(event) => setAccessKey(event.target.value)} /></div><div className="settings-block"><div className="settings-title"><Palette size={17} /><strong>{t.language}</strong></div><div className="segmented"><button type="button" className={language === 'kh' ? 'active' : ''} onClick={() => setLanguage('kh')}>ភាសាខ្មែរ</button><button type="button" className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')}>English</button></div></div><div className="settings-block"><div className="settings-title"><Sun size={17} /><strong>{t.theme}</strong></div><div className="theme-options">{themes.map(([key, label, ThemeIcon]) => <button type="button" key={key} className={themeMode === key ? 'active' : ''} onClick={() => setThemeMode(key)}><ThemeIcon size={15} />{label}</button>)}</div><div className="setting-row compact"><strong>{t.eyeCare}</strong><Toggle checked={eyeCare} onChange={setEyeCare} label={t.eyeCare} /></div></div></div><button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.save}</button></aside></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><h2>{t.settings}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div><div className="drawer-content"><div className="settings-block"><div className="settings-title"><Lock size={17} /><strong>{t.apiTitle}</strong></div><AccessKeyField t={t} language={language} /></div><div className="settings-block"><div className="settings-title"><Palette size={17} /><strong>{t.language}</strong></div><div className="segmented"><button type="button" className={language === 'kh' ? 'active' : ''} onClick={() => setLanguage('kh')}>ភាសាខ្មែរ</button><button type="button" className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')}>English</button></div></div><div className="settings-block"><div className="settings-title"><Sun size={17} /><strong>{t.theme}</strong></div><div className="theme-options">{themes.map(([key, label, ThemeIcon]) => <button type="button" key={key} className={themeMode === key ? 'active' : ''} onClick={() => setThemeMode(key)}><ThemeIcon size={15} />{label}</button>)}</div><div className="setting-row compact"><strong>{t.eyeCare}</strong><Toggle checked={eyeCare} onChange={setEyeCare} label={t.eyeCare} /></div></div></div><button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.save}</button></aside></div>;
 }
 
 export default function Home() {
