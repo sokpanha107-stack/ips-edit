@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, ClipboardPaste, Copy, Languages, ListChecks, Play, Scissors, Square, Undo2, Volume2, X } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, ClipboardPaste, Copy, Languages, ListChecks, Play, RefreshCw, Scissors, Square, Volume2, X } from 'lucide-react';
 import { api, splitScenes } from '@/lib/client/api';
 import { breakScript, detectLang, PRESET_MAX, type Lang, type Preset } from '@/lib/client/scriptTools';
 
 const copy = {
   en: {
+    check: 'Check', pasteHere: 'Paste text', arranged: 'Arranged lines', rearrange: 'Re-arrange', edited: 'Edited by hand. Re-arrange rebuilds it from the pasted text.', alignLeft: 'Left', alignCenter: 'Center', alignRight: 'Right', useAsInput: 'Use as input',
     prepare: 'Prepare Script', breakBtn: 'Break into lines', undo: 'Undo', copyScript: 'Copy Script', useResult: 'Use as script', lineCount: 'lines',
     format: 'Format', translate: 'Translate', preview: 'Preview',
     formatTitle: 'Script formatter', rawPh: 'Paste your raw script here…', output: 'Formatted lines', lines: 'lines', numbered: 'Number the lines (Scene 01:)',
@@ -17,6 +18,7 @@ const copy = {
     noKm: 'This device has no Khmer voice, so Khmer lines may be silent or read wrongly. Install one in Settings > Accessibility > Spoken Content > Voices.', unsupported: 'Speech is not supported in this browser.', spoke: 's',
   },
   kh: {
+    check: 'ពិនិត្យ', pasteHere: 'បិទភ្ជាប់អត្ថបទ', arranged: 'អត្ថបទរៀបជាជួរ', rearrange: 'រៀបចំម្តងទៀត', edited: 'អ្នកបានកែដោយដៃ។ ចុច "រៀបចំម្តងទៀត" ដើម្បីបង្កើតឡើងវិញពីអត្ថបទដែលបានបិទភ្ជាប់។', alignLeft: 'ឆ្វេង', alignCenter: 'កណ្តាល', alignRight: 'ស្តាំ', useAsInput: 'ប្រើជាអត្ថបទដើម',
     prepare: 'រៀបចំ Script', breakBtn: 'កាត់ជាបន្ទាត់', undo: 'ត្រឡប់វិញ', copyScript: 'Copy Script', useResult: 'ប្រើជា script', lineCount: 'បន្ទាត់',
     format: 'រៀបចំ', translate: 'បកប្រែ', preview: 'ស្តាប់សាកល្បង',
     formatTitle: 'រៀបចំ Script', rawPh: 'បិទភ្ជាប់ script ដើមនៅទីនេះ…', output: 'បន្ទាត់ដែលបានរៀបចំ', lines: 'បន្ទាត់', numbered: 'ដាក់លេខបន្ទាត់ (Scene 01:)',
@@ -114,31 +116,40 @@ function PreviewPanel({ c, script, anchor }: { c: C; script: string; anchor: num
   </div>;
 }
 
-type Tab = 'format' | 'translate' | 'preview';
+type Tab = 'check' | 'translate' | 'preview';
+type Align = 'left' | 'center' | 'right';
+const NEXT_ALIGN: Record<Align, Align> = { center: 'left', left: 'right', right: 'center' };
 
-function Workspace({ c, language, initial, anchor, onClose, onInsert, onNotice, state }: {
-  c: C; language: Language; initial: string; anchor: number[]; onClose: () => void; onInsert: (text: string) => void; onNotice: (m: string) => void;
-  state: { text: string; setText: (v: string) => void };
+/** Always mounted (so nothing is lost when closed); renders the modal only while open. */
+function Workspace({ open, c, initial, anchor, onClose, onInsert, onNotice }: {
+  open: boolean; c: C; initial: string; anchor: number[]; onClose: () => void; onInsert: (text: string) => void; onNotice: (m: string) => void;
 }) {
-  const { text, setText } = state;
-  const [tab, setTab] = useState<Tab>('format');
+  const [tab, setTab] = useState<Tab>('check');
+  const [text, setText] = useState('');            // what the user pastes
+  const [arranged, setArranged] = useState('');    // short lines, one per scene; editable by hand
+  const [dirty, setDirty] = useState(false);       // arranged was edited by hand: do not overwrite it automatically
   const [preset, setPreset] = useState<Preset>('medium');
   const [numbered, setNumbered] = useState(false);
-  const [undo, setUndo] = useState<string[]>([]);
+  const [align, setAlign] = useState<Align>('center');
   const [from, setFrom] = useState<Lang>('km');
   const [out, setOut] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const to: Lang = from === 'km' ? 'en' : 'km';
   const name = (l: Lang) => (l === 'km' ? c.khmer : c.english);
-  const lineCount = text.split(/\r?\n/).filter((l) => l.trim()).length;
+  const lineCount = arranged.split(/\r?\n/).filter((l) => l.trim()).length;
+  const AlignIcon = align === 'left' ? AlignLeft : align === 'right' ? AlignRight : AlignCenter;
 
-  useEffect(() => { if (!text && initial) setText(initial); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open && !text && initial) setText(initial); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // live: rebuild the arranged lines whenever the pasted text or the settings change (unless edited by hand)
+  useEffect(() => { if (!dirty) setArranged(breakScript(text, preset, numbered).join('\n')); }, [text, preset, numbered, dirty]);
+
+  if (!open) return null;
   const change = (v: string) => { setText(v); if (v.trim().length > 3) { const d = detectLang(v); if (d !== from) setFrom(d); } };
-  const replaceText = (v: string) => { setUndo((u) => [...u.slice(-9), text]); setText(v); };
-  const doBreak = () => { if (!text.trim()) { onNotice(c.nothing); return; } replaceText(breakScript(text, preset, numbered).join('\n')); };
   const paste = async () => { try { change(await navigator.clipboard.readText()); } catch { onNotice('Paste blocked: long-press the box and choose Paste.'); } };
-  const doCopy = async () => { if (!text.trim()) { onNotice(c.nothing); return; } onNotice((await copyText(text)) ? c.copied : 'Copy failed'); };
+  const rearrange = () => { setDirty(false); setArranged(breakScript(text, preset, numbered).join('\n')); };
+  const result = arranged.trim() ? arranged : text;
+  const doCopy = async () => { if (!result.trim()) { onNotice(c.nothing); return; } onNotice((await copyText(result)) ? c.copied : 'Copy failed'); };
   const go = async () => {
     if (!text.trim()) return;
     setBusy(true); setError('');
@@ -156,50 +167,58 @@ function Workspace({ c, language, initial, anchor, onClose, onInsert, onNotice, 
 
   const footer = <>
     <button type="button" className="primary-button big-copy" onClick={doCopy}><Copy size={16} /> {c.copyScript}</button>
-    <button type="button" className="text-button" onClick={() => { if (text.trim()) { onInsert(text); onClose(); } else onNotice(c.nothing); }}><ListChecks size={14} /> {c.insert}</button>
+    <button type="button" className="text-button" onClick={() => { if (result.trim()) { onInsert(result); onClose(); } else onNotice(c.nothing); }}><ListChecks size={14} /> {c.insert}</button>
   </>;
 
   return <Modal title={c.prepare} onClose={onClose} footer={footer}>
-    <div className="tool-row">
-      <button type="button" className="text-button" onClick={paste}><ClipboardPaste size={14} /> {c.paste}</button>
-      <span className="tool-count">{lineCount} {c.lineCount}</span>
-      <span className="tool-actions">{undo.length > 0 && <button type="button" className="text-button" onClick={() => { setText(undo[undo.length - 1]); setUndo((u) => u.slice(0, -1)); }}><Undo2 size={14} /> {c.undo}</button>}
-        {text && <button type="button" className="text-button" onClick={() => { setText(''); setOut(''); setUndo([]); }}>{c.clear}</button>}</span>
-    </div>
-    <textarea className="studio-input tool-area" value={text} placeholder={c.rawPh} onChange={(e) => change(e.target.value)} />
     <div className="tool-tabs" role="tablist">
-      {([['format', Scissors, c.format], ['translate', Languages, c.translate], ['preview', Volume2, c.preview]] as const).map(([k, Icon, label]) =>
+      {([['check', Scissors, c.check], ['translate', Languages, c.translate], ['preview', Volume2, c.preview]] as const).map(([k, Icon, label]) =>
         <button key={k} type="button" role="tab" aria-selected={tab === k} className={`tool-tab ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}><Icon size={14} /> {label}</button>)}
     </div>
 
-    {tab === 'format' && <div className="tool-section">
-      <div className="chip-row">{(['short', 'medium', 'long'] as Preset[]).map((p) => <button key={p} type="button" className={`chip ${preset === p ? 'on' : ''}`} onClick={() => setPreset(p)}>{c[p]} · {PRESET_MAX[p]}</button>)}</div>
-      <label className="check-label"><input type="checkbox" checked={numbered} onChange={(e) => setNumbered(e.target.checked)} /> {c.numbered}</label>
-      <button type="button" className="primary-button" onClick={doBreak}><Scissors size={15} /> {c.breakBtn}</button>
+    {tab === 'check' && <div className="tool-section">
+      <div className="check-grid">
+        <div className="check-pane">
+          <div className="tool-row"><span className="tool-label">{c.pasteHere}</span><span className="tool-actions">
+            <button type="button" className="text-button" onClick={paste}><ClipboardPaste size={14} /> {c.paste}</button>
+            {text && <button type="button" className="text-button" onClick={() => { setText(''); setDirty(false); }}>{c.clear}</button>}</span></div>
+          <textarea className="studio-input tool-area" value={text} placeholder={c.rawPh} onChange={(e) => change(e.target.value)} />
+        </div>
+        <div className="check-pane">
+          <div className="tool-row"><span className="tool-label">{c.arranged} · {lineCount} {c.lineCount}</span><span className="tool-actions">
+            <button type="button" className="icon-button sm" onClick={() => setAlign(NEXT_ALIGN[align])} aria-label={`${c.alignCenter}/${c.alignLeft}/${c.alignRight}`} title={align === 'left' ? c.alignLeft : align === 'right' ? c.alignRight : c.alignCenter}><AlignIcon size={15} /></button>
+            <button type="button" className={`text-button ${dirty ? 'attn' : ''}`} onClick={rearrange}><RefreshCw size={13} /> {c.rearrange}</button></span></div>
+          <textarea className="studio-input tool-area arranged" style={{ textAlign: align }} value={arranged} placeholder={c.output}
+            onChange={(e) => { setArranged(e.target.value); setDirty(true); }} />
+          {dirty && <p className="access-help">{c.edited}</p>}
+        </div>
+      </div>
+      <div className="tool-row"><div className="chip-row">{(['short', 'medium', 'long'] as Preset[]).map((p) => <button key={p} type="button" className={`chip ${preset === p ? 'on' : ''}`} onClick={() => { setPreset(p); setDirty(false); }}>{c[p]} · {PRESET_MAX[p]}</button>)}</div>
+        <label className="check-label"><input type="checkbox" checked={numbered} onChange={(e) => { setNumbered(e.target.checked); setDirty(false); }} /> {c.numbered}</label></div>
     </div>}
 
     {tab === 'translate' && <div className="tool-section">
-      <div className="lang-bar"><span className="lang-pill">{name(from)}</span><button type="button" className="icon-button" onClick={() => { setFrom(to); if (out) { replaceText(out); setOut(''); } }} aria-label={c.swap}><ArrowLeftRight size={16} /></button><span className="lang-pill">{name(to)}</span></div>
+      <div className="lang-bar"><span className="lang-pill">{name(from)}</span><button type="button" className="icon-button" onClick={() => { setFrom(to); if (out) { setText(out); setOut(''); setDirty(false); } }} aria-label={c.swap}><ArrowLeftRight size={16} /></button><span className="lang-pill">{name(to)}</span></div>
+      <textarea className="studio-input tool-area" value={text} placeholder={c.typeHere} onChange={(e) => change(e.target.value)} />
       <textarea className="studio-input tool-area out" readOnly value={busy ? c.working : out} placeholder={c.result} />
       <div className="pane-foot"><button type="button" className="icon-button sm" onClick={() => speak(out, to)} aria-label={c.speak}><Volume2 size={14} /></button>
         <button type="button" className="icon-button sm" onClick={async () => onNotice(out ? ((await copyText(out)) ? c.copied : 'Copy failed') : c.nothing)} aria-label={c.copy}><Copy size={14} /></button>
-        <button type="button" className="text-button" onClick={() => { if (out) { replaceText(out); setOut(''); } else onNotice(c.nothing); }}>{c.useResult}</button></div>
+        <button type="button" className="text-button" onClick={() => { if (out) { setText(out); setOut(''); setDirty(false); setTab('check'); } else onNotice(c.nothing); }}>{c.useAsInput}</button></div>
       {error && <div className="access-status bad">{error}</div>}
       <button type="button" className="primary-button" onClick={go} disabled={busy || !text.trim()}><Languages size={15} /> {busy ? c.working : c.go}</button>
       <p className="access-help">{c.proof}</p>
     </div>}
 
-    {tab === 'preview' && <PreviewPanel c={c} script={text} anchor={anchor} />}
+    {tab === 'preview' && <PreviewPanel c={c} script={result} anchor={anchor} />}
   </Modal>;
 }
 
-/** One clean button; everything about preparing a script lives in the modal it opens. The text is kept while the modal is closed. */
+/** One clean button; everything about preparing a script lives in the modal it opens. Text is kept while the modal is closed. */
 export function PrepareScriptButton({ language, script, anchor, onScript, onNotice }: { language: Language; script: string; anchor: number[]; onScript: (text: string) => void; onNotice: (m: string) => void }) {
   const c = copy[language];
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState('');
   return <>
     <button type="button" className="prepare-button" onClick={() => setOpen(true)}><Scissors size={15} /> {c.prepare}</button>
-    {open && <Workspace c={c} language={language} initial={script} anchor={anchor} state={{ text, setText }} onClose={() => setOpen(false)} onInsert={onScript} onNotice={onNotice} />}
+    <Workspace open={open} c={c} initial={script} anchor={anchor} onClose={() => setOpen(false)} onInsert={onScript} onNotice={onNotice} />
   </>;
 }
