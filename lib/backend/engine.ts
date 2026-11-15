@@ -4,6 +4,7 @@ import { getProvider, providerFor } from './providers';
 import { getStore } from './store';
 import type { Job, Scene } from './types';
 import type { SceneResult } from './providers/types';
+import { normalizeBase, type Endpoint } from './endpoint';
 
 export const MAX_ATTEMPTS = 3;
 const STALE_CLAIM_MS = 120_000;
@@ -16,16 +17,19 @@ export interface NewJob {
   imageDataUrl?: string;
   voiceId?: string;
   options?: Record<string, unknown>;
+  /** User-supplied GPU worker (Command Center). Used for video jobs instead of VIDEO_PROVIDER. */
+  endpoint?: Endpoint;
 }
 
 export async function createJob(input: NewJob): Promise<Job> {
   if (input.scenes.length > config.maxScenes()) throw new Error(`Too many scenes (max ${config.maxScenes()})`);
-  const provider = providerFor(input.engine);
+  const useEndpoint = input.engine === 'video' && !!input.endpoint?.url;
+  const provider = useEndpoint ? 'http' : providerFor(input.engine);
   getProvider(provider); // throws if unknown
   const ts = new Date().toISOString();
   const job: Job = {
     id: randomUUID(), engine: input.engine, folder: input.folder, masterPrompt: input.masterPrompt, provider,
-    imageUrl: input.imageDataUrl, voiceId: input.voiceId, options: input.options ?? {}, cancelled: false,
+    imageUrl: input.imageDataUrl, voiceId: input.voiceId, options: { ...(input.options ?? {}), ...(useEndpoint ? { _endpoint: { url: normalizeBase(input.endpoint!.url), key: input.endpoint!.key } } : {}) }, cancelled: false,
     createdAt: ts, updatedAt: ts,
     scenes: input.scenes.map((prompt, idx): Scene => ({ jobId: '', idx, prompt, status: 'queued', attempts: 0, updatedAt: ts })),
   };

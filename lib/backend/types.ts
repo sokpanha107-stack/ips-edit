@@ -52,9 +52,13 @@ export function deriveStatus(job: Pick<Job, 'scenes' | 'cancelled'>): JobStatus 
 export function toView(job: Job): JobView {
   const { imageUrl: _omit, ...rest } = job;
   void _omit;
+  // never send the worker URL/key back to the browser
+  const { _endpoint: _ep, ...publicOptions } = rest.options as Record<string, unknown>;
+  void _ep;
   const scenes = job.scenes;
   return {
     ...rest,
+    options: publicOptions,
     status: deriveStatus(job),
     progress: {
       total: scenes.length,

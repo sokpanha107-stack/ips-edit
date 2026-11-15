@@ -1,10 +1,11 @@
 import { config } from '../config';
 import { falProvider } from './fal';
+import { httpProvider } from './http';
 import { mockProvider } from './mock';
 import { runpodProvider } from './runpod';
 import { ProviderConfigError, type Provider } from './types';
 
-const registry: Record<string, Provider> = { mock: mockProvider, fal: falProvider, runpod: runpodProvider };
+const registry: Record<string, Provider> = { mock: mockProvider, fal: falProvider, runpod: runpodProvider, http: httpProvider };
 
 export function getProvider(name: string): Provider {
   const p = registry[name];

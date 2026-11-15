@@ -17,6 +17,7 @@ const schema = z.object({
   imageDataUrl: z.string().max(6_000_000).startsWith('data:image/').optional(),
   voiceId: z.string().max(100).optional(),
   options: z.record(z.unknown()).optional(),
+  endpoint: z.object({ url: z.string().url().max(500), key: z.string().max(500).optional() }).optional(),
 });
 
 export async function POST(req: Request) {

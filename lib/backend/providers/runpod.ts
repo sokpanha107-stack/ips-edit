@@ -15,7 +15,7 @@ function outputUrl(out: any): string | undefined { // eslint-disable-line @types
   if (typeof out === 'string') return out;
   return out?.url ?? out?.video_url ?? out?.audio_url;
 }
-function toResult(status: string, output: any, error?: unknown): SceneResult { // eslint-disable-line @typescript-eslint/no-explicit-any
+export function toResult(status: string, output: any, error?: unknown): SceneResult { // eslint-disable-line @typescript-eslint/no-explicit-any
   if (status === 'COMPLETED') {
     const url = outputUrl(output);
     return url ? { status: 'done', outputUrl: url } : { status: 'failed', error: 'worker returned no url' };
