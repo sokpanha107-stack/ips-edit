@@ -5,7 +5,7 @@ import { ProviderConfigError, type Provider, type SceneResult } from './types';
 /**
  * RunPod Serverless endpoint (your own worker running Wan2.2 / VoxCPM2 ...).
  * Contract with the worker:
- *   input  = { engine, prompt, image (data URL), voice_id, options }
+ *   input  = { engine, job_id, prompt, image (data URL), voice_id, scene, options }
  *   output = { url } | { video_url } | { audio_url } | "https://..."
  */
 const endpointFor = (engine: string) => (engine === 'video' ? config.runpodVideoEndpoint() : config.runpodVoiceEndpoint());
@@ -32,7 +32,7 @@ export const runpodProvider: Provider = {
     const res = await fetch(`https://api.runpod.ai/v2/${endpoint}/run`, {
       method: 'POST', headers: headers(),
       body: JSON.stringify({
-        input: { engine: job.engine, prompt: composePrompt(job, scene), image: job.imageUrl, voice_id: job.voiceId, scene: scene.idx, options: job.options },
+        input: { engine: job.engine, job_id: job.id, prompt: composePrompt(job, scene), image: job.imageUrl, voice_id: job.voiceId, scene: scene.idx, options: job.options },
         ...(ctx.webhookUrl ? { webhook: ctx.webhookUrl } : {}),
       }),
     });
