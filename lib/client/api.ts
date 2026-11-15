@@ -43,6 +43,8 @@ export const api = {
     const endpoint = ep?.url ? { url: ep.url, ...(ep.key ? { key: ep.key } : {}) } : undefined;
     return call<JobView>('/api/jobs', { method: 'POST', body: JSON.stringify({ ...body, ...(endpoint ? { endpoint } : {}) }) });
   },
+  translate: (text: string, from: 'km' | 'en', to: 'km' | 'en') =>
+    call<{ ok: boolean; text?: string; error?: string }>('/api/translate', { method: 'POST', body: JSON.stringify({ text, from, to }) }),
   connect: (ep: VideoEndpoint, mode: 'connect' | 'refresh' = 'connect') =>
     call<ConnectResult>('/api/connect', { method: 'POST', body: JSON.stringify({ url: ep.url, key: ep.key || undefined, mode }) }),
   getJob: (id: string) => call<JobView>(`/api/jobs/${id}`),

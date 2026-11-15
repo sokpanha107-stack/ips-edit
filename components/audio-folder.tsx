@@ -8,22 +8,36 @@ export interface AudioItem { name: string; seconds: number }
 export const videoCopy = {
   en: {
     folderBtn: 'Add audio folder', folderHelp: 'Pick the folder with 01.mp3, 02.mp3… Lengths are read on this device; nothing is uploaded. If your phone cannot pick a folder, select all the files at once.',
-    reading: 'Reading audio lengths…', files: 'files', total: 'Total', remove: 'Remove', report: 'Audio length per scene', scene: 'Scene',
+    reading: 'Reading audio lengths…', files: 'files', total: 'Total', remove: 'Remove', report: 'KH audio = timing anchor · seconds per scene', scene: 'Scene',
     noAudioFound: 'No audio files found in that selection.', unreadable: 'Could not read', mismatch: (a: number, s: number) => `Audio has ${a} files but scenes is set to ${s}`,
     rendering: 'Rendering', of: 'of', done: 'done', online: 'GPU online', offline: 'GPU offline', checking: 'Checking GPU…', resume: 'Resume',
     paused: (saved: number, next: number) => `Connection lost. ${saved} scenes are saved. Resume continues from scene ${next}.`,
     stillOffline: 'The GPU worker is still offline. Check Command Center, then try again.',
+    anchorMismatch: (a: number, s: number) => `KH timing has ${a} scenes but scenes is set to ${s}`, anchorFromKh: (n: number) => `Timing anchor updated from KH voice (${n} scenes)`,
   },
   kh: {
     folderBtn: 'បញ្ចូល Folder សំឡេង', folderHelp: 'ជ្រើស Folder ដែលមាន 01.mp3, 02.mp3… ប្រវែងត្រូវបានអានក្នុងឧបករណ៍នេះ មិនបាន upload ទេ។ បើទូរស័ព្ទមិនអាចជ្រើស Folder សូមជ្រើសឯកសារទាំងអស់ក្នុងពេលតែមួយ។',
-    reading: 'កំពុងអានប្រវែងសំឡេង…', files: 'ឯកសារ', total: 'សរុប', remove: 'លុប', report: 'ប្រវែងសំឡេងតាម scene', scene: 'Scene',
+    reading: 'កំពុងអានប្រវែងសំឡេង…', files: 'ឯកសារ', total: 'សរុប', remove: 'លុប', report: 'សំឡេង KH = ស្តង់ដារពេលវេលា · វិនាទីតាម scene', scene: 'Scene',
     noAudioFound: 'រកមិនឃើញឯកសារសំឡេងទេ។', unreadable: 'អានមិនបាន', mismatch: (a: number, s: number) => `សំឡេងមាន ${a} ឯកសារ ប៉ុន្តែអ្នកកំណត់ ${s} scene`,
     rendering: 'កំពុងកិន', of: '/', done: 'រួច', online: 'GPU ភ្ជាប់', offline: 'GPU ដាច់', checking: 'កំពុងពិនិត្យ GPU…', resume: 'Resume',
     paused: (saved: number, next: number) => `ដាច់ទំនាក់ទំនង។ រក្សាទុក ${saved} scene រួច។ Resume នឹងបន្តពី scene ${next}។`,
     stillOffline: 'ម៉ាស៊ីន GPU នៅតែដាច់។ សូមពិនិត្យ Command Center ហើយសាកល្បងម្តងទៀត។',
+    anchorMismatch: (a: number, s: number) => `ពេលវេលា KH មាន ${a} scene ប៉ុន្តែអ្នកកំណត់ ${s}`, anchorFromKh: (n: number) => `បានធ្វើបច្ចុប្បន្នភាពស្តង់ដារពេលវេលាពីសំឡេង KH (${n} scene)`,
   },
 } as const;
 export type VideoCopy = (typeof videoCopy)['en'] | (typeof videoCopy)['kh'];
+
+/** Length of an audio file reachable by URL (used for finished KH voice scenes). */
+export function readAudioUrl(url: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => (Number.isFinite(audio.duration) && audio.duration > 0 ? resolve(Math.round(audio.duration * 100) / 100) : reject(new Error('no duration')));
+    audio.onerror = () => reject(new Error('unreadable'));
+    window.setTimeout(() => reject(new Error('timeout')), 20000);
+    audio.src = url;
+  });
+}
 
 const AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|webm)$/i;
 
