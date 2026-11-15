@@ -1,4 +1,5 @@
 import { authHeaders, normalizeBase, type Endpoint } from '../endpoint';
+import { workerOptions } from '../frames';
 import { composePrompt } from '../prompt';
 import { ProviderConfigError, type Provider } from './types';
 import { toResult } from './runpod';
@@ -16,7 +17,6 @@ function endpointOf(options: Record<string, unknown>): Endpoint {
   if (!ep?.url) throw new ProviderConfigError('No GPU endpoint set. Open Command Center, enter the Video Engine URL and press Connect.');
   return { url: normalizeBase(ep.url), key: ep.key };
 }
-const publicOptions = ({ _endpoint, ...rest }: Record<string, unknown>) => { void _endpoint; return rest; };
 
 export const httpProvider: Provider = {
   name: 'http',
@@ -25,7 +25,7 @@ export const httpProvider: Provider = {
     const res = await fetch(`${ep.url}/run`, {
       method: 'POST', headers: authHeaders(ep),
       body: JSON.stringify({
-        input: { engine: job.engine, job_id: job.id, prompt: composePrompt(job, scene), image: job.imageUrl, voice_id: job.voiceId, scene: scene.idx, options: publicOptions(job.options) },
+        input: { engine: job.engine, job_id: job.id, prompt: composePrompt(job, scene), image: job.imageUrl, voice_id: job.voiceId, scene: scene.idx, options: workerOptions(job, scene) },
         ...(ctx.webhookUrl ? { webhook: ctx.webhookUrl } : {}),
       }),
     });

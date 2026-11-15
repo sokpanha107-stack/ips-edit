@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { AudioFolderPicker, AudioReport, videoCopy, type AudioItem } from '@/components/audio-folder';
 import { CommandCenter } from '@/components/command-center';
+import { useHeartbeat } from '@/lib/client/heartbeat';
 import { api, getAccessKey, imageToDataUrl, isFinished, setAccessKey, splitScenes, type JobView } from '@/lib/client/api';
 import {
   AudioLines, Check, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
@@ -111,9 +113,9 @@ function Splash({ leaving, onSkip, t }: { leaving: boolean; onSkip: () => void; 
   return <div className={`splash ${leaving ? 'is-leaving' : ''}`} onClick={onSkip} role="presentation"><div className="splash-inner"><LogoMark className="splash-logo" /><h1>IPS <em>edit</em></h1><p>{t.tagline}</p><div className="splash-bar"><i /></div></div></div>;
 }
 
-type JobDraft = { folder: string; count: string; prompt: string; script: string };
+type JobDraft = { folder: string; count: string; prompt: string; script: string; audio: AudioItem[] };
 type EngineKey = 'video' | 'kh' | 'en';
-const emptyDraft: JobDraft = { folder: '', count: '', prompt: '', script: '' };
+const emptyDraft: JobDraft = { folder: '', count: '', prompt: '', script: '', audio: [] };
 
 function countScenes(script: string) {
   const lines = script.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -122,9 +124,13 @@ function countScenes(script: string) {
   return marked.length > 0 ? marked.length : lines.length;
 }
 
-function EngineWorkspace({ type, t, draft, onDraft, voiceProfile, image, imageLocked, onImage, onLock, onNotice }: { type: EngineKey; t: Copy; draft: JobDraft; onDraft: (patch: Partial<JobDraft>) => void; voiceProfile?: Voice; image?: BaseImage; imageLocked?: boolean; onImage?: (file: File) => void; onLock?: () => void; onNotice: (message: string) => void }) {
+function EngineWorkspace({ type, t, language, draft, onDraft, voiceProfile, image, imageLocked, onImage, onLock, onNotice }: { type: EngineKey; t: Copy; language: Language; draft: JobDraft; onDraft: (patch: Partial<JobDraft>) => void; voiceProfile?: Voice; image?: BaseImage; imageLocked?: boolean; onImage?: (file: File) => void; onLock?: () => void; onNotice: (message: string) => void }) {
   const isVideo = type === 'video';
   const isKh = type === 'kh';
+  const vc = videoCopy[language];
+  const audio = draft.audio ?? [];
+  const beat = useHeartbeat(isVideo);
+  const [paused, setPaused] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [isUploaded, setIsUploaded] = useState(false);
@@ -138,6 +144,7 @@ function EngineWorkspace({ type, t, draft, onDraft, voiceProfile, image, imageLo
   else if (!draft.folder.trim()) problem = t.needFolder;
   else if (!wanted || wanted < 1) problem = t.needCount;
   else if (!draft.prompt.trim()) problem = t.needPrompt;
+  else if (isVideo && audio.length > 0 && audio.length !== wanted) problem = vc.mismatch(audio.length, wanted);
   else if (scriptScenes > 0 && scriptScenes !== wanted) problem = `${t.scriptHas} ${scriptScenes} ${t.scenesWord} ${t.butSet} ${wanted}`;
   const ready = problem === '';
   const summary = `${draft.folder.trim()} · ${wanted} ${t.scenesWord}`;
@@ -148,7 +155,7 @@ function EngineWorkspace({ type, t, draft, onDraft, voiceProfile, image, imageLo
   noticeRef.current = onNotice;
   useEffect(() => { try { const saved = window.localStorage.getItem(storeKey); if (saved) { setJobId(saved); setIsProcessing(true); } } catch { /* storage unavailable */ } }, [storeKey]);
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId || paused) return;
     let stopped = false;
     let timer = 0;
     const finish = (view: JobView) => {
@@ -163,6 +170,7 @@ function EngineWorkspace({ type, t, draft, onDraft, voiceProfile, image, imageLo
         const view = await api.getJob(jobId);
         if (stopped) return;
         setJob(view);
+        if (view.status === 'cancelled') { setPaused(true); return; } // stopped by the heartbeat guard: wait for Resume
         if (isFinished(view.status)) { finish(view); return; }
       } catch (error) {
         if (stopped) return;
@@ -172,15 +180,31 @@ function EngineWorkspace({ type, t, draft, onDraft, voiceProfile, image, imageLo
     };
     poll();
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [jobId, storeKey]);
+  }, [jobId, storeKey, paused]);
+  // GPU worker went silent in the middle of a job: stop the queue now and keep the finished scenes.
+  useEffect(() => {
+    if (beat !== 'down' || !jobId || !isProcessing || paused) return;
+    setPaused(true);
+    api.cancelJob(jobId).then(setJob).catch(() => undefined);
+  }, [beat, jobId, isProcessing, paused]);
+  const resume = async () => {
+    if (!jobId) return;
+    if (beat === 'down') { onNotice(vc.stillOffline); return; }
+    try { const view = await api.resumeJob(jobId); setJob(view); setPaused(false); setIsProcessing(true); }
+    catch (error) { onNotice(error instanceof Error ? error.message : 'Could not resume'); }
+  };
   const generate = async () => {
     if (!ready) return;
-    setIsProcessing(true); setHasGenerated(false); setIsUploaded(false); setJob(null);
+    setIsProcessing(true); setHasGenerated(false); setIsUploaded(false); setJob(null); setPaused(false);
     try {
-      const scenes = splitScenes(draft.script);
+      const parsed = splitScenes(draft.script);
+      const useAudio = isVideo && audio.length > 0;
+      const scenes = parsed.length ? parsed : useAudio ? audio.map(() => '') : [''];
       const created = await api.createJob({
-        engine: type, folder: draft.folder.trim(), masterPrompt: draft.prompt.trim(), scenes: scenes.length ? scenes : [''],
+        engine: type, folder: draft.folder.trim(), masterPrompt: draft.prompt.trim(), scenes,
         imageDataUrl: isVideo && image ? await imageToDataUrl(image.url) : undefined, voiceId: voiceProfile?.name,
+        // Audio-first: every scene carries its audio length so the GPU renders exactly that many frames
+        options: useAudio ? { sceneSeconds: audio.map((a) => a.seconds) } : undefined,
       });
       try { window.localStorage.setItem(storeKey, created.id); } catch { /* storage unavailable */ }
       setJob(created); setJobId(created.id);
@@ -189,7 +213,7 @@ function EngineWorkspace({ type, t, draft, onDraft, voiceProfile, image, imageLo
       onNotice(error instanceof Error ? error.message : 'Could not start the job');
     }
   };
-  return <section className="screen-card engine-screen"><div className="screen-heading"><SectionHeading icon={Icon} eyebrow={`${isVideo ? '02' : isKh ? '03' : '04'} · ${title}`} title={title} detail={detail} /><span className="status-dot"><span />{t.ready}</span></div>{isVideo ? <BaseImageUploader t={t} image={image ?? null} locked={!!imageLocked} onImage={onImage ?? (() => undefined)} onLock={onLock ?? (() => undefined)} onNotice={onNotice} /> : <div className="voice-source"><div className={`voice-avatar ${isKh ? 'kh-avatar' : 'en-avatar'}`} style={voiceProfile ? { background: voiceProfile.color } : undefined}>{voiceProfile?.initials ?? '--'}</div><div><span>{t.selectedVoice}</span><strong>{voiceProfile?.name ?? '—'}</strong></div><ChevronRight size={16} /></div>}<div className="job-fields"><div><label className="field-label" htmlFor={`${type}-folder`}>{t.folderName} <span>{t.required}</span></label><input id={`${type}-folder`} className="studio-input" value={draft.folder} maxLength={60} placeholder={t.folderPlaceholder} onChange={(event) => onDraft({ folder: event.target.value.replace(/[\\/:*?"<>|]/g, '-') })} /></div><div><label className="field-label" htmlFor={`${type}-count`}>{t.sceneCount} <span>{t.required}</span></label><input id={`${type}-count`} className="studio-input" inputMode="numeric" value={draft.count} maxLength={3} placeholder="0" onChange={(event) => onDraft({ count: event.target.value.replace(/\D/g, '').slice(0, 3) })} /></div></div><label className="field-label">{t.masterPrompt} <span>{t.required}</span></label><input className="studio-input" value={draft.prompt} onChange={(event) => onDraft({ prompt: event.target.value })} placeholder={isVideo ? t.describeScene : t.setDelivery} /><label className="field-label">{t.batchScripts} <span>{t.optional}</span></label><textarea className="studio-textarea" value={draft.script} onChange={(event) => onDraft({ script: event.target.value })} placeholder={isVideo ? t.scriptVideo : t.scriptVoice} />{!isProcessing && !hasGenerated && !isUploaded && <div className={`scene-check ${ready ? 'ok' : scriptScenes > 0 && scriptScenes !== wanted ? 'bad' : 'neutral'}`}>{ready ? <Check size={14} /> : <ShieldCheck size={14} />}<span>{ready ? `${t.verified} · ${scriptScenes > 0 ? `${scriptScenes} ${t.scenesWord}` : t.noScript}` : problem}</span></div>}{isProcessing && <div className="processing-state"><span className="processing-spinner" /> {t.generating} {isVideo ? 'video' : 'voice'}… {job ? `${job.progress.done}/${job.progress.total}` : ''}</div>}{(isProcessing || hasGenerated) && <div className="job-summary"><Folder size={14} /> {summary}</div>}{!isProcessing && !hasGenerated && !isUploaded && <button type="button" className="primary-button generate-button" disabled={!ready} onClick={generate}><WandSparkles size={16} /> {isVideo ? t.generateVideo : t.generateVoice}</button>}{!isProcessing && hasGenerated && !isUploaded && <button type="button" className="drive-button" onClick={() => { setIsUploaded(true); onNotice(t.uploaded); }}><Upload size={15} /> {t.uploadDrive}</button>}{!isProcessing && isUploaded && <div className="upload-success"><div><Check size={16} /><strong>{t.uploaded}</strong><span>{t.archived}</span></div><button type="button" className="close-result" onClick={() => setIsUploaded(false)} aria-label={t.close}><X size={17} /></button></div>}{!isProcessing && !hasGenerated && !isUploaded && <p className="workspace-helper"><ShieldCheck size={14} /> {t.uploadAfter}</p>}</section>;
+  return <section className="screen-card engine-screen">{isVideo ? <div className="hb-row"><span className={`hb-dot ${beat}`} role="status"><i />{beat === 'up' ? vc.online : beat === 'down' ? vc.offline : vc.checking}</span></div> : <div className="screen-heading"><SectionHeading icon={Icon} eyebrow={`${isKh ? '03' : '04'} · ${title}`} title={title} detail={detail} /><span className="status-dot"><span />{t.ready}</span></div>}{isVideo ? <><BaseImageUploader t={t} image={image ?? null} locked={!!imageLocked} onImage={onImage ?? (() => undefined)} onLock={onLock ?? (() => undefined)} onNotice={onNotice} /><AudioFolderPicker c={vc} items={audio} disabled={isProcessing} onNotice={onNotice} onChange={(items) => onDraft({ audio: items, ...(items.length ? { count: String(items.length) } : {}) })} /></> : <div className="voice-source"><div className={`voice-avatar ${isKh ? 'kh-avatar' : 'en-avatar'}`} style={voiceProfile ? { background: voiceProfile.color } : undefined}>{voiceProfile?.initials ?? '--'}</div><div><span>{t.selectedVoice}</span><strong>{voiceProfile?.name ?? '—'}</strong></div><ChevronRight size={16} /></div>}<div className="job-fields"><div><label className="field-label" htmlFor={`${type}-folder`}>{t.folderName} <span>{t.required}</span></label><input id={`${type}-folder`} className="studio-input" value={draft.folder} maxLength={60} placeholder={t.folderPlaceholder} onChange={(event) => onDraft({ folder: event.target.value.replace(/[\\/:*?"<>|]/g, '-') })} /></div><div><label className="field-label" htmlFor={`${type}-count`}>{t.sceneCount} <span>{t.required}</span></label><input id={`${type}-count`} className="studio-input" inputMode="numeric" value={draft.count} maxLength={3} placeholder="0" onChange={(event) => onDraft({ count: event.target.value.replace(/\D/g, '').slice(0, 3) })} /></div></div><label className="field-label">{t.masterPrompt} <span>{t.required}</span></label><input className="studio-input" value={draft.prompt} onChange={(event) => onDraft({ prompt: event.target.value })} placeholder={isVideo ? t.describeScene : t.setDelivery} /><label className="field-label">{t.batchScripts} <span>{t.optional}</span></label><textarea className="studio-textarea" value={draft.script} onChange={(event) => onDraft({ script: event.target.value })} placeholder={isVideo ? t.scriptVideo : t.scriptVoice} />{isVideo && audio.length > 0 && <AudioReport c={vc} items={audio} />}{!isProcessing && !hasGenerated && !isUploaded && <div className={`scene-check ${ready ? 'ok' : scriptScenes > 0 && scriptScenes !== wanted ? 'bad' : 'neutral'}`}>{ready ? <Check size={14} /> : <ShieldCheck size={14} />}<span>{ready ? `${t.verified} · ${scriptScenes > 0 ? `${scriptScenes} ${t.scenesWord}` : t.noScript}` : problem}</span></div>}{isProcessing && !paused && (isVideo && job ? <div className="queue-line"><span className="processing-spinner" /> ⏳ {vc.rendering} {vc.scene} {Math.min(job.progress.total, (job.scenes.find((x) => x.status !== 'done')?.idx ?? job.progress.total - 1) + 1)}{vc.of}{job.progress.total}… · {job.progress.done} {vc.done}</div> : <div className="processing-state"><span className="processing-spinner" /> {t.generating} {isVideo ? 'video' : 'voice'}… {job ? `${job.progress.done}/${job.progress.total}` : ''}</div>)}{paused && <div className="paused-box">⚠ {vc.paused(job?.progress.done ?? 0, (job?.scenes.find((x) => x.status !== 'done')?.idx ?? 0) + 1)}</div>}{(isProcessing || hasGenerated) && <div className="job-summary"><Folder size={14} /> {summary}</div>}{paused && <button type="button" className="resume-button" onClick={resume}><Play size={15} fill="currentColor" /> {vc.resume}</button>}{!isProcessing && !paused && !hasGenerated && !isUploaded && <button type="button" className="primary-button generate-button" disabled={!ready} onClick={generate}><WandSparkles size={16} /> {isVideo ? t.generateVideo : t.generateVoice}</button>}{!isProcessing && hasGenerated && !isUploaded && <button type="button" className="drive-button" onClick={() => { setIsUploaded(true); onNotice(t.uploaded); }}><Upload size={15} /> {t.uploadDrive}</button>}{!isProcessing && isUploaded && <div className="upload-success"><div><Check size={16} /><strong>{t.uploaded}</strong><span>{t.archived}</span></div><button type="button" className="close-result" onClick={() => setIsUploaded(false)} aria-label={t.close}><X size={17} /></button></div>}{!isProcessing && !hasGenerated && !isUploaded && <p className="workspace-helper"><ShieldCheck size={14} /> {t.uploadAfter}</p>}</section>;
 }
 
 function HistoryProject({ t }: { t: Copy }) {
@@ -277,7 +301,7 @@ export default function Home() {
   const sendVoice = (voice: string, target: Target) => { setAssigned((current) => ({ ...current, [target]: voice })); showNotice(`${t.sentTo} ${target === 'kh' ? t.khEngine : t.enEngine} · ${voice}`); };
   const deleteVoices = (names: string[]) => { setVoices((current) => current.filter((voice) => !names.includes(voice.name))); setAssigned((current) => ({ kh: names.includes(current.kh) ? '' : current.kh, en: names.includes(current.en) ? '' : current.en })); showNotice(t.deletedVoices); };
   const addImage = (file: File) => { setBaseImage({ url: URL.createObjectURL(file), name: file.name }); showNotice(t.imageReady); };
-  const renderScreen = () => { if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" type="video" t={t} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
+  const renderScreen = () => { if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
   const items = navItems(t);
 
   return <main className="app-shell"><header className="topbar"><Brand t={t} /><div className="topbar-actions"><div className="live-status"><span />{t.ready}</div><button type="button" className="icon-button" onClick={() => setSettingsOpen(true)} aria-label={t.settings}><Settings2 size={19} /></button><button type="button" className="menu-button" onClick={() => setCommandOpen(true)} aria-label={t.commandCenter}><Menu size={22} /><span>{t.commandCenter}</span></button></div></header><div className="app-body"><nav className="sidebar"><div className="sidebar-label">{t.workspace}</div>{items.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={activeTab === id ? 'nav-item active' : 'nav-item'} onClick={() => setActiveTab(id)}><Icon size={18} /><span>{label}</span>{activeTab === id && <ChevronRight size={14} className="nav-arrow" />}</button>)}<div className="sidebar-spacer" /><div className="sidebar-foot"><div className="mini-pulse"><span /><div><strong>{t.ready}</strong><small>RunPod · 2 GPUs online</small></div></div><button type="button" className="nav-item" onClick={() => setSettingsOpen(true)}><Settings2 size={18} /><span>{t.settings}</span></button></div></nav><div className="workspace">{notice && <div className="notice"><Check size={16} />{notice}</div>}{renderScreen()}</div></div><nav className="bottom-nav">{items.map(({ id, shortLabel, icon: Icon }) => <button type="button" key={id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}><Icon size={19} /><span>{shortLabel}</span></button>)}</nav><CommandCenter open={commandOpen} onClose={() => setCommandOpen(false)} t={t} language={language} /><SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} t={t} language={language} setLanguage={setLanguage} themeMode={themeMode} setThemeMode={setThemeMode} eyeCare={eyeCare} setEyeCare={() => setEyeCare((value) => !value)} />{splash !== 'done' && <Splash leaving={splash === 'leaving'} onSkip={() => setSplash('leaving')} t={t} />}</main>;

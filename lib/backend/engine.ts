@@ -119,3 +119,21 @@ export async function retryFailed(jobId: string) {
   }
   return tick(jobId);
 }
+
+/**
+ * Continue a paused/cancelled job from its first unfinished scene. Finished scenes are kept.
+ * A new endpoint may be passed (a new Colab session has a new URL).
+ */
+export async function resumeJob(jobId: string, endpoint?: Endpoint) {
+  const store = getStore();
+  const job = await store.getJob(jobId);
+  if (!job) return null;
+  if (endpoint?.url && job.provider === 'http') {
+    await store.updateOptions(jobId, { ...job.options, _endpoint: { url: normalizeBase(endpoint.url), key: endpoint.key } });
+  }
+  await store.setCancelled(jobId, false);
+  for (const s of job.scenes.filter((x) => x.status !== 'done')) {
+    await store.updateScene(jobId, s.idx, { status: 'queued', attempts: 0, error: null, externalId: null, meta: null });
+  }
+  return tick(jobId);
+}

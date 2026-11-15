@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { workerOptions } from '../frames';
 import { composePrompt } from '../prompt';
 import { ProviderConfigError, type Provider, type SceneResult } from './types';
 
@@ -32,7 +33,7 @@ export const runpodProvider: Provider = {
     const res = await fetch(`https://api.runpod.ai/v2/${endpoint}/run`, {
       method: 'POST', headers: headers(),
       body: JSON.stringify({
-        input: { engine: job.engine, job_id: job.id, prompt: composePrompt(job, scene), image: job.imageUrl, voice_id: job.voiceId, scene: scene.idx, options: job.options },
+        input: { engine: job.engine, job_id: job.id, prompt: composePrompt(job, scene), image: job.imageUrl, voice_id: job.voiceId, scene: scene.idx, options: workerOptions(job, scene) },
         ...(ctx.webhookUrl ? { webhook: ctx.webhookUrl } : {}),
       }),
     });

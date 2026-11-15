@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { audioSecondsFor, framesForSeconds } from '../frames';
 import { composePrompt } from '../prompt';
 import { ProviderConfigError, type Provider, type SceneResult } from './types';
 
@@ -23,7 +24,7 @@ export const falProvider: Provider = {
         prompt: composePrompt(job, scene),
         image_url: job.imageUrl,
         resolution: '720p',
-        num_frames: Number(job.options.numFrames) || 121,
+        num_frames: Number(job.options.numFrames) || (audioSecondsFor(job, scene) ? framesForSeconds(audioSecondsFor(job, scene)!, 17, 161) : 121),
         frames_per_second: 24,
       }),
     });

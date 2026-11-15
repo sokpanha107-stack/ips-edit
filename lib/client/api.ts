@@ -47,6 +47,11 @@ export const api = {
     call<ConnectResult>('/api/connect', { method: 'POST', body: JSON.stringify({ url: ep.url, key: ep.key || undefined, mode }) }),
   getJob: (id: string) => call<JobView>(`/api/jobs/${id}`),
   cancelJob: (id: string) => call<JobView>(`/api/jobs/${id}`, { method: 'DELETE' }),
+  /** Continue a paused job from its first unfinished scene (sends the current GPU endpoint in case the Colab URL changed). */
+  resumeJob: (id: string) => {
+    const ep = getVideoEndpoint();
+    return call<JobView>(`/api/jobs/${id}/resume`, { method: 'POST', body: JSON.stringify(ep.url ? { endpoint: { url: ep.url, ...(ep.key ? { key: ep.key } : {}) } } : {}) });
+  },
   retryJob: (id: string) => call<JobView>(`/api/jobs/${id}/retry`, { method: 'POST' }),
   listJobs: () => call<{ jobs: JobView[] }>('/api/jobs'),
 };

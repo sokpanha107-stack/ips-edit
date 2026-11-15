@@ -138,3 +138,19 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .cc-video { border:1px solid var(--line); border-radius:12px; padding:14px; background:rgba(255,255,255,.1); }
 .cc-monitor { margin-top:14px; max-height:none; overflow:visible; padding:14px; }.cc-live { display:block; color:var(--ink-soft); font-size:9.5px; margin-top:2px; }
 .cc-model { font-size:13px !important; word-break:break-word; }
+.hb-row { display:flex; justify-content:flex-end; margin:-4px 0 10px; }
+.hb-dot { display:inline-flex; align-items:center; gap:6px; font-size:10px; color:var(--ink-soft); }.hb-dot i { width:9px; height:9px; border-radius:50%; background:var(--line); }
+.hb-dot.up i { background:#22c55e; box-shadow:0 0 0 0 rgba(34,197,94,.6); animation:hbpulse 2s infinite; }.hb-dot.down i { background:#dc2626; }
+@keyframes hbpulse { 70% { box-shadow:0 0 0 6px rgba(34,197,94,0); } 100% { box-shadow:0 0 0 0 rgba(34,197,94,0); } }
+.lock-row .toggle { margin-left:6px; transform-origin:left center; }
+.audio-box { border:1px dashed var(--line); border-radius:9px; padding:10px 12px; margin:-8px 0 18px; }
+.audio-row { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }.audio-pick { padding:4px 0; }
+.audio-sum { display:inline-flex; align-items:center; gap:5px; color:var(--sage); font-size:10.5px; font-weight:600; }.audio-clear { border:0; background:transparent; color:var(--ink-soft); cursor:pointer; display:inline-flex; padding:2px; }
+.audio-box .access-help { margin:6px 0 0; }
+.audio-report { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:-6px 0 14px; max-height:190px; overflow:auto; font-size:10.5px; }
+.audio-report-head { display:flex; align-items:center; gap:6px; color:var(--ink-soft); margin-bottom:6px; font-weight:600; }
+.audio-report table { width:100%; border-collapse:collapse; }.audio-report td { padding:3px 0; }.audio-report td:last-child { text-align:right; font-variant-numeric:tabular-nums; }
+.audio-name { color:var(--ink-soft); padding:0 8px !important; overflow:hidden; text-overflow:ellipsis; max-width:120px; white-space:nowrap; }.audio-total td { border-top:1px solid var(--line); font-weight:700; }
+.queue-line { display:flex; align-items:center; gap:9px; border:1px solid rgba(217,119,6,.3); border-radius:8px; padding:12px; color:var(--amber-deep); font-size:12px; background:rgba(217,119,6,.08); margin-bottom:10px; }
+.paused-box { border:1px solid rgba(185,28,28,.35); border-radius:8px; padding:12px; color:#b91c1c; font-size:11.5px; line-height:1.5; background:rgba(185,28,28,.08); margin-bottom:10px; }
+.resume-button { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; border:0; border-radius:10px; padding:14px; background:#dc2626; color:#fff; font-weight:700; font-size:13px; cursor:pointer; }

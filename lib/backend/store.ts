@@ -11,7 +11,8 @@ export interface Store {
   createJob(job: Job): Promise<void>;
   getJob(id: string): Promise<Job | null>;
   listJobs(limit: number): Promise<Job[]>;
-  setCancelled(id: string): Promise<void>;
+  setCancelled(id: string, value?: boolean): Promise<void>;
+  updateOptions(id: string, options: Record<string, unknown>): Promise<void>;
   updateScene(jobId: string, idx: number, patch: ScenePatch): Promise<void>;
   /** Atomically move a scene queued -> running. Returns false if someone else got it first. */
   claimScene(jobId: string, idx: number): Promise<boolean>;
@@ -37,7 +38,8 @@ class MemoryStore implements Store {
   async createJob(job: Job) { this.jobs.set(job.id, structuredClone(job)); }
   async getJob(id: string) { const j = this.jobs.get(id); return j ? structuredClone(j) : null; }
   async listJobs(limit: number) { return Array.from(this.jobs.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit).map((j) => structuredClone(j)); }
-  async setCancelled(id: string) { const j = this.jobs.get(id); if (j) { j.cancelled = true; j.updatedAt = now(); } }
+  async setCancelled(id: string, value = true) { const j = this.jobs.get(id); if (j) { j.cancelled = value; j.updatedAt = now(); } }
+  async updateOptions(id: string, options: Record<string, unknown>) { const j = this.jobs.get(id); if (j) { j.options = options; j.updatedAt = now(); } }
   async updateScene(jobId: string, idx: number, patch: ScenePatch) { const s = this.jobs.get(jobId)?.scenes[idx]; if (s) applyPatch(s, patch); }
   async claimScene(jobId: string, idx: number) {
     const s = this.jobs.get(jobId)?.scenes[idx];
@@ -97,7 +99,8 @@ class SupabaseStore implements Store {
     const scenes = this.check(await this.db.from('ips_scenes').select('*').in('job_id', jobs.map((j: Row) => j.id))) ?? [];
     return jobs.map((j: Row) => jobFromRow(j, scenes.filter((s: Row) => s.job_id === j.id).map(sceneFromRow)));
   }
-  async setCancelled(id: string) { this.check(await this.db.from('ips_jobs').update({ cancelled: true, updated_at: now() }).eq('id', id)); }
+  async setCancelled(id: string, value = true) { this.check(await this.db.from('ips_jobs').update({ cancelled: value, updated_at: now() }).eq('id', id)); }
+  async updateOptions(id: string, options: Record<string, unknown>) { this.check(await this.db.from('ips_jobs').update({ options, updated_at: now() }).eq('id', id)); }
   async updateScene(jobId: string, idx: number, patch: ScenePatch) {
     this.check(await this.db.from('ips_scenes').update(patchToRow(patch)).eq('job_id', jobId).eq('idx', idx));
   }

@@ -25,6 +25,10 @@ export async function POST(req: Request) {
   if (denied) return denied;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'invalid request', details: parsed.error.flatten() }, { status: 400 });
+  const secs = parsed.data.options?.sceneSeconds;
+  if (secs !== undefined && !(Array.isArray(secs) && secs.length === parsed.data.scenes.length && secs.every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= 600))) {
+    return NextResponse.json({ error: 'sceneSeconds must list one length (seconds) per scene' }, { status: 400 });
+  }
   if (parsed.data.engine === 'video' && !parsed.data.imageDataUrl) return NextResponse.json({ error: 'video jobs need a base image' }, { status: 400 });
   try {
     const job = await createJob(parsed.data);
