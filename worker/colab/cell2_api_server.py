@@ -11,14 +11,14 @@ DRIVE_OUT = '/content/drive/MyDrive/IPS_Outputs'
 NEGATIVE = 'blurry, low quality, distorted face, deformed hands, extra fingers, jitter, flicker, watermark, subtitles'
 
 if not TEST:
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '-U', 'diffusers', 'transformers', 'accelerate', 'sentencepiece',
+    subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '-U', 'deep-translator', 'diffusers', 'transformers', 'accelerate', 'sentencepiece',
                     'ftfy', 'imageio', 'imageio-ffmpeg', 'fastapi', 'uvicorn', 'python-multipart', 'requests', 'pillow'], check=True)
     from google.colab import drive
     drive.mount('/content/drive')
 
 import requests
 from PIL import Image
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -196,6 +196,53 @@ def hardware():
             'disk_total_gb': round(disk.total / 1e9, 1), 'disk_used_gb': round(disk.used / 1e9, 1),
             'model': 'Wan2.2-TI2V-5B' + ('' if ENGINE.pipe else ' (loading…)'), 'mode': ENGINE.tier, 'ready': bool(ENGINE.pipe) and not ENGINE.error,
             'error': ENGINE.error, 'active_tasks': active}
+
+# ---- free Khmer <-> English translation (deep-translator, no key) ----
+import re as _re
+
+LANG = {'km': 'km', 'en': 'en'}
+MAX_CHARS = 4500   # the free web endpoint accepts ~5000 characters per request
+
+
+def _pieces(line: str):
+    if len(line) <= MAX_CHARS:
+        return [line]
+    out, cur = [], ''
+    for part in _re.split(r'(?<=[.!?។៕])\s+|\s+', line):
+        nxt = f'{cur} {part}'.strip()
+        if len(nxt) <= MAX_CHARS:
+            cur = nxt
+        else:
+            if cur: out.append(cur)
+            cur = part[:MAX_CHARS]
+    if cur: out.append(cur)
+    return out
+
+
+def translate_text(text: str, src: str, dst: str) -> str:
+    """Keeps line breaks: every non-empty line is translated on its own so the scene structure survives."""
+    if src == dst:
+        return text
+    from deep_translator import GoogleTranslator
+    tr = GoogleTranslator(source=LANG[src], target=LANG[dst])
+    out = []
+    for line in text.replace('\r', '').split('\n'):
+        if not line.strip():
+            out.append('')
+            continue
+        out.append(' '.join((tr.translate(p) or '') for p in _pieces(line.strip())))
+    return '\n'.join(out)
+
+@app.post('/translate')
+async def translate_route(request: Request):
+    body = await request.json()
+    text, src, dst = str(body.get('text', '')), body.get('from'), body.get('to')
+    if not text.strip() or src not in ('km', 'en') or dst not in ('km', 'en'):
+        return JSONResponse({'ok': False, 'error': 'invalid request'}, status_code=400)
+    try:
+        return {'ok': True, 'text': await asyncio.to_thread(translate_text, text[:6000], src, dst)}
+    except Exception as e:
+        return JSONResponse({'ok': False, 'error': str(e)[:160]}, status_code=502)
 
 @app.get('/ping')
 @app.get('/hardware')

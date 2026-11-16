@@ -8,7 +8,7 @@ import { breakScript, detectLang, PRESET_MAX, type Lang, type Preset } from '@/l
 const copy = {
   en: {
     check: 'Check', pasteHere: 'Paste text', arranged: 'Arranged lines', rearrange: 'Re-arrange', edited: 'Edited by hand. Re-arrange rebuilds it from the pasted text.', alignLeft: 'Left', alignCenter: 'Center', alignRight: 'Right', useAsInput: 'Use as input',
-    prepare: 'Script Preparation', sendTo: 'Send to', sentTo: 'Sent to', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'Break into lines', undo: 'Undo', copyScript: 'Copy Script', useResult: 'Use as script', lineCount: 'lines',
+    playAll: 'Play All', stopAll: 'Stop', addScene: 'Add scene', prepare: 'Script Preparation', sendTo: 'Send to', sentTo: 'Sent to', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'Break into lines', undo: 'Undo', copyScript: 'Copy Script', useResult: 'Use as script', lineCount: 'lines',
     format: 'Format', translate: 'Translate', preview: 'Preview',
     formatTitle: 'Script formatter', rawPh: 'Paste your raw script here…', output: 'Formatted lines', lines: 'lines', numbered: 'Number the lines (Scene 01:)',
     short: 'Short', medium: 'Medium', long: 'Long', paste: 'Paste', copy: 'Copy', copied: 'Copied', insert: 'Use in Batch Scripts', nothing: 'Nothing to copy yet', clear: 'Clear',
@@ -19,7 +19,7 @@ const copy = {
   },
   kh: {
     check: 'ពិនិត្យ', pasteHere: 'បិទភ្ជាប់អត្ថបទ', arranged: 'អត្ថបទរៀបជាជួរ', rearrange: 'រៀបចំម្តងទៀត', edited: 'អ្នកបានកែដោយដៃ។ ចុច "រៀបចំម្តងទៀត" ដើម្បីបង្កើតឡើងវិញពីអត្ថបទដែលបានបិទភ្ជាប់។', alignLeft: 'ឆ្វេង', alignCenter: 'កណ្តាល', alignRight: 'ស្តាំ', useAsInput: 'ប្រើជាអត្ថបទដើម',
-    prepare: 'Script Preparation', sendTo: 'ផ្ញើទៅ', sentTo: 'បានផ្ញើទៅ', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'កាត់ជាបន្ទាត់', undo: 'ត្រឡប់វិញ', copyScript: 'Copy Script', useResult: 'ប្រើជា script', lineCount: 'បន្ទាត់',
+    playAll: 'ចាក់ទាំងអស់', stopAll: 'ឈប់', addScene: 'បន្ថែម scene', prepare: 'Script Preparation', sendTo: 'ផ្ញើទៅ', sentTo: 'បានផ្ញើទៅ', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'កាត់ជាបន្ទាត់', undo: 'ត្រឡប់វិញ', copyScript: 'Copy Script', useResult: 'ប្រើជា script', lineCount: 'បន្ទាត់',
     format: 'រៀបចំ', translate: 'បកប្រែ', preview: 'ស្តាប់សាកល្បង',
     formatTitle: 'រៀបចំ Script', rawPh: 'បិទភ្ជាប់ script ដើមនៅទីនេះ…', output: 'បន្ទាត់ដែលបានរៀបចំ', lines: 'បន្ទាត់', numbered: 'ដាក់លេខបន្ទាត់ (Scene 01:)',
     short: 'ខ្លី', medium: 'មធ្យម', long: 'វែង', paste: 'បិទភ្ជាប់', copy: 'Copy', copied: 'បាន Copy', insert: 'ប្រើក្នុង Batch Scripts', nothing: 'មិនទាន់មានអ្វីត្រូវ Copy', clear: 'សម្អាត',
@@ -51,72 +51,54 @@ function Modal({ title, onClose, children, footer }: { title: string; onClose: (
   </div></div>;
 }
 
-function PreviewPanel({ c, script, anchor }: { c: C; script: string; anchor: number[] }) {
-  const lines = useMemo(() => splitScenes(script), [script]);
-  const [from, setFrom] = useState(1);
-  const [stopAt, setStopAt] = useState(0);
-  const [rate, setRate] = useState(1);
-  const [idx, setIdx] = useState(-1);
-  const [playing, setPlaying] = useState(false);
+/** Speaks scene lines with the free device voice (window.speechSynthesis). One scene or a run of scenes; always cancels what was playing first. */
+function useScenePlayer(getLines: () => string[], rate: number) {
+  const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const [now, setNow] = useState(-1);                       // scene being spoken
+  const [mode, setMode] = useState<'idle' | 'all' | 'one'>('idle');
   const [times, setTimes] = useState<Record<number, number>>({});
   const [hasKm, setHasKm] = useState(true);
   const runId = useRef(0);
-  const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const last = stopAt > 0 ? Math.min(stopAt, lines.length) : lines.length;
 
   useEffect(() => {
     if (!supported) return;
     const refresh = () => setHasKm(window.speechSynthesis.getVoices().some((v) => v.lang.toLowerCase().startsWith('km')));
     refresh();
     window.speechSynthesis.addEventListener?.('voiceschanged', refresh);
-    return () => { window.speechSynthesis.removeEventListener?.('voiceschanged', refresh); window.speechSynthesis.cancel(); };
+    return () => { runId.current += 1; window.speechSynthesis.removeEventListener?.('voiceschanged', refresh); window.speechSynthesis.cancel(); };
   }, [supported]);
 
-  const stop = useCallback(() => { runId.current += 1; if (supported) window.speechSynthesis.cancel(); setPlaying(false); setIdx(-1); }, [supported]);
-  const play = () => {
-    if (!supported || !lines.length) return;
+  const stop = useCallback(() => { runId.current += 1; if (supported) window.speechSynthesis.cancel(); setMode('idle'); setNow(-1); }, [supported]);
+  const run = useCallback((start: number, onlyOne: boolean) => {
+    if (!supported) return;
     window.speechSynthesis.cancel();
     const id = ++runId.current;
-    setPlaying(true); setTimes({});
+    setMode(onlyOne ? 'one' : 'all'); setNow(-1);
+    if (!onlyOne) setTimes({});
     const speak = (i: number) => {
+      const lines = getLines();
       if (id !== runId.current) return;
-      if (i >= last) { setPlaying(false); setIdx(-1); return; }
-      const lang = detectLang(lines[i]);
-      const u = new SpeechSynthesisUtterance(lines[i]);
+      if (i >= lines.length || (onlyOne && i > start)) { setMode('idle'); setNow(-1); return; }
+      const text = lines[i].replace(/^\s*\d+\s*[.):-]\s*/, '').trim();
+      if (!text) { speak(i + 1); return; }
+      const lang = detectLang(text);
+      const u = new SpeechSynthesisUtterance(text);
       u.lang = lang === 'km' ? 'km-KH' : 'en-US'; u.rate = rate;
       const voice = window.speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(lang));
       if (voice) u.voice = voice;
       let t0 = 0;
-      u.onstart = () => { t0 = performance.now(); setIdx(i); };
+      u.onstart = () => { t0 = performance.now(); setNow(i); };
       u.onend = () => { setTimes((t) => ({ ...t, [i]: Math.round(((performance.now() - t0) / 1000) * 10) / 10 })); speak(i + 1); };
       u.onerror = () => { if (id === runId.current) speak(i + 1); };
       window.speechSynthesis.speak(u);
     };
-    speak(Math.max(0, from - 1));
-  };
-  useEffect(() => () => { runId.current += 1; }, []);
+    speak(start);
+  }, [supported, getLines, rate]);
 
-  if (!supported) return <div className="preview-panel flat"><p className="access-help">{c.unsupported}</p></div>;
-  const needsKm = lines.some((l) => detectLang(l) === 'km') && !hasKm;
-  return <div className="preview-panel">
-    <div className="tool-label">{c.previewTitle}</div>
-    {lines.length === 0 ? <p className="access-help">{c.noScript}</p> : <>
-      <div className="preview-controls">
-        <label>{c.from}<input className="studio-input" inputMode="numeric" value={from} onChange={(e) => setFrom(Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1))} /></label>
-        <label>{c.to}<input className="studio-input" inputMode="numeric" value={stopAt || ''} placeholder={String(lines.length)} onChange={(e) => setStopAt(Number(e.target.value.replace(/\D/g, '')) || 0)} /></label>
-        <label>{c.speed} {rate.toFixed(1)}×<input type="range" min="0.6" max="1.5" step="0.1" value={rate} onChange={(e) => setRate(Number(e.target.value))} /></label>
-        {playing ? <button type="button" className="primary-button" onClick={stop}><Square size={14} /> {c.stop}</button> : <button type="button" className="primary-button" onClick={play}><Play size={14} fill="currentColor" /> {c.play}</button>}
-      </div>
-      {needsKm && <div className="access-status bad">{c.noKm}</div>}
-      <ol className="preview-list">{lines.map((l, i) => {
-        const a = anchor[i]; const t = times[i];
-        return <li key={i} className={i === idx ? 'now' : ''} onClick={() => setFrom(i + 1)}><b>{String(i + 1).padStart(2, '0')}</b><span>{l}</span>
-          <em className={a && t && t > a * 1.1 ? 'over' : ''}>{t !== undefined ? `${t}${c.spoke}` : ''}{a ? ` · ${c.anchor} ${a}${c.spoke}` : ''}</em></li>;
-      })}</ol></>}
-  </div>;
+  return { supported, now, mode, times, hasKm, stop, playAll: () => run(0, false), playOne: (i: number) => run(i, true) };
 }
 
-type Tab = 'check' | 'translate' | 'preview';
+type Tab = 'check' | 'translate';
 type Align = 'left' | 'center' | 'right';
 const NEXT_ALIGN: Record<Align, Align> = { center: 'left', left: 'right', right: 'center' };
 
@@ -137,7 +119,17 @@ function Workspace({ c, anchor, onSend, onNotice }: {
   const [out, setOut] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [rate, setRate] = useState(1);
   const to: Lang = from === 'km' ? 'en' : 'km';
+  const linesRef = useRef<string[]>([]);
+  const getLines = useCallback(() => linesRef.current, []);
+  const player = useScenePlayer(getLines, rate);
+  const rows = arranged.split(/\r?\n/);
+  const sceneRows = rows.map((text, i) => ({ text, i })).filter((r) => r.text.trim() || rows.length === 1);
+  linesRef.current = rows;
+  const setRow = (i: number, v: string) => { const next = rows.slice(); next[i] = v.replace(/\r?\n/g, ' '); setArranged(next.join('\n')); setDirty(true); };
+  const delRow = (i: number) => { player.stop(); setArranged(rows.filter((_, k) => k !== i).join('\n')); setDirty(true); };
+  const addRow = () => { setArranged((arranged.trimEnd() ? arranged.trimEnd() + '\n' : '') + ' '); setDirty(true); };
   const name = (l: Lang) => (l === 'km' ? c.khmer : c.english);
   const lineCount = arranged.split(/\r?\n/).filter((l) => l.trim()).length;
   const AlignIcon = align === 'left' ? AlignLeft : align === 'right' ? AlignRight : AlignCenter;
@@ -170,7 +162,7 @@ function Workspace({ c, anchor, onSend, onNotice }: {
   return <section className="screen-card script-screen">
     <div className="screen-heading"><div className="section-heading"><div className="heading-icon"><Scissors size={18} /></div><div className="heading-only"><span className="eyebrow">{c.prepare}</span></div></div></div>
     <div className="tool-tabs" role="tablist">
-      {([['check', Scissors, c.check], ['translate', Languages, c.translate], ['preview', Volume2, c.preview]] as const).map(([k, Icon, label]) =>
+      {([['check', Scissors, c.check], ['translate', Languages, c.translate]] as const).map(([k, Icon, label]) =>
         <button key={k} type="button" role="tab" aria-selected={tab === k} className={`tool-tab ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}><Icon size={14} /> {label}</button>)}
     </div>
 
@@ -186,8 +178,32 @@ function Workspace({ c, anchor, onSend, onNotice }: {
           <div className="tool-row"><span className="tool-label">{c.arranged} · {lineCount} {c.lineCount}</span><span className="tool-actions">
             <button type="button" className="icon-button sm" onClick={() => setAlign(NEXT_ALIGN[align])} aria-label={`${c.alignCenter}/${c.alignLeft}/${c.alignRight}`} title={align === 'left' ? c.alignLeft : align === 'right' ? c.alignRight : c.alignCenter}><AlignIcon size={15} /></button>
             <button type="button" className={`text-button ${dirty ? 'attn' : ''}`} onClick={rearrange}><RefreshCw size={13} /> {c.rearrange}</button></span></div>
-          <textarea className="studio-input tool-area arranged" style={{ textAlign: align }} value={arranged} placeholder={c.output}
-            onChange={(e) => { setArranged(e.target.value); setDirty(true); }} />
+          <div className="play-bar">
+            {player.mode === 'idle'
+              ? <button type="button" className="primary-button" onClick={player.playAll} disabled={!player.supported || !arranged.trim()}><Play size={14} fill="currentColor" /> {c.playAll}</button>
+              : <button type="button" className="primary-button" onClick={player.stop}><Square size={14} fill="currentColor" /> {c.stopAll}</button>}
+            <label className="speed">{c.speed} {rate.toFixed(1)}×<input type="range" min="0.6" max="1.5" step="0.1" value={rate} onChange={(e) => setRate(Number(e.target.value))} /></label>
+          </div>
+          {!player.supported && <div className="access-status bad">{c.unsupported}</div>}
+          {player.supported && !player.hasKm && rows.some((r) => detectLang(r) === 'km') && <div className="access-status bad">{c.noKm}</div>}
+          <ol className="scene-list">
+            {sceneRows.map(({ text: t, i }, n) => {
+              const a = anchor[n]; const tm = player.times[i];
+              return <li key={i} className={`scene-row ${player.now === i ? 'now' : ''}`}>
+                <div className="scene-head"><b>Scene {String(n + 1).padStart(2, '0')}</b>
+                  <em className={a && tm && tm > a * 1.1 ? 'over' : ''}>{tm !== undefined ? `${tm}${c.spoke}` : ''}{a ? ` · ${c.anchor} ${a}${c.spoke}` : ''}</em>
+                  <span className="scene-btns">
+                    {player.mode === 'one' && player.now === i
+                      ? <button type="button" className="icon-button sm" onClick={player.stop} aria-label={`${c.stop} scene ${n + 1}`}><Square size={13} fill="currentColor" /></button>
+                      : <button type="button" className="icon-button sm" onClick={() => player.playOne(i)} disabled={!player.supported || !t.trim()} aria-label={`${c.play} scene ${n + 1}`}><Play size={13} fill="currentColor" /></button>}
+                    {player.mode !== 'idle' && player.now === i && player.mode === 'all' && <button type="button" className="icon-button sm" onClick={player.stop} aria-label={c.stop}><Square size={13} fill="currentColor" /></button>}
+                    <button type="button" className="icon-button sm" onClick={() => delRow(i)} aria-label="Delete scene"><X size={13} /></button>
+                  </span></div>
+                <textarea className="scene-text" rows={Math.max(1, Math.ceil(t.length / 28))} style={{ textAlign: align }} value={t} placeholder={c.output} onChange={(e) => setRow(i, e.target.value)} />
+              </li>;
+            })}
+          </ol>
+          <button type="button" className="text-button" onClick={addRow}>+ {c.addScene}</button>
           {dirty && <p className="access-help">{c.edited}</p>}
         </div>
       </div>
@@ -207,7 +223,6 @@ function Workspace({ c, anchor, onSend, onNotice }: {
       <p className="access-help">{c.proof}</p>
     </div>}
 
-    {tab === 'preview' && <PreviewPanel c={c} script={result} anchor={anchor} />}
     <div className="tool-foot">
       <button type="button" className="primary-button big-copy" onClick={doCopy}><Copy size={16} /> {c.copyScript}</button>
       <div className="send-row"><span className="tool-label">{c.sendTo}</span>

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAccess } from '@/lib/backend/auth';
+import { normalizeBase, type Endpoint } from '@/lib/backend/endpoint';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const schema = z.object({ text: z.string().min(1).max(3000), from: z.enum(['km', 'en']), to: z.enum(['km', 'en']) });
+const schema = z.object({ text: z.string().min(1).max(6000), from: z.enum(['km', 'en']), to: z.enum(['km', 'en']), endpoint: z.object({ url: z.string().max(500), key: z.string().max(300).optional() }).optional() });
 const CODES: Record<string, string[]> = { km: ['km', 'km-KH'], en: ['en', 'en-US'] };
 const MAX_BYTES = 450;   // MyMemory accepts at most 500 bytes per request; Khmer letters are 3 bytes each
 
@@ -45,14 +46,32 @@ async function translateChunk(q: string, from: string, to: string): Promise<stri
   throw new Error(lastError);
 }
 
-/** Khmer <-> English through the free MyMemory service (no key). Quality for Khmer is basic: always proofread. */
+/** Free FastAPI translator (deep-translator): the user's GPU worker (Colab) or a service named in TRANSLATE_API_URL. */
+async function viaFastApi(ep: Endpoint, text: string, from: string, to: string): Promise<string> {
+  const res = await fetch(`${normalizeBase(ep.url)}/translate`, {
+    method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(30000),
+    headers: { 'Content-Type': 'application/json', ...(ep.key ? { Authorization: `Bearer ${ep.key}` } : {}) },
+    body: JSON.stringify({ text, from, to }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok || typeof data.text !== 'string') throw new Error(data?.error || `HTTP ${res.status}`);
+  return data.text;
+}
+
+/** Khmer <-> English: free deep-translator backend first, MyMemory as the fallback (no key needed). Khmer quality is basic: always proofread. */
 export async function POST(req: Request) {
   const denied = requireAccess(req);
   if (denied) return denied;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid request' }, { status: 400 });
-  const { text, from, to } = parsed.data;
+  const { text, from, to, endpoint } = parsed.data;
   if (from === to) return NextResponse.json({ ok: true, text });
+  const candidates: Endpoint[] = [];
+  if (process.env.TRANSLATE_API_URL) candidates.push({ url: process.env.TRANSLATE_API_URL, key: process.env.TRANSLATE_API_KEY });
+  if (endpoint?.url) candidates.push(endpoint);
+  for (const ep of candidates) {
+    try { return NextResponse.json({ ok: true, text: await viaFastApi(ep, text, from, to), via: 'deep-translator' }); } catch { /* try the next one */ }
+  }
   try {
     const lines = text.replace(/\r/g, '').split('\n');
     const out: string[] = [];
@@ -62,7 +81,7 @@ export async function POST(req: Request) {
       for (const p of pieces(line.trim())) done.push(await translateChunk(p, from, to));
       out.push(done.join(' '));
     }
-    return NextResponse.json({ ok: true, text: out.join('\n') });
+    return NextResponse.json({ ok: true, text: out.join('\n'), via: 'mymemory' });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'failed';
     return NextResponse.json({ ok: false, error: msg === 'quota' ? 'quota' : msg });
