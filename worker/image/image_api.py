@@ -15,25 +15,58 @@ from pathlib import Path
 
 WORK = Path(os.environ.get('IPS_IMAGE_DIR', tempfile.gettempdir())) / 'ips_images'
 MOCK = os.environ.get('IPS_IMAGE_MOCK') == '1'
+MODEL = os.environ.get('IPS_IMAGE_MODEL', 'klein')   # 'klein' = FLUX.2 klein 4B (default) | 'sdxl' = SDXL + IP-Adapter
+MODELS_DIR = os.environ.get('IPS_MODELS_DIR', '/content/drive/MyDrive/IPS_Models')
+KLEIN_ID = 'black-forest-labs/FLUX.2-klein-4B'
+KEEP = 'Keep exactly the same character (face, hair, skin tone, clothes) and the same illustration art style as the reference image. New scene: '
 MAX_PROMPTS = 100
 JOBS: dict = {}
 Q: 'queue.Queue[str]' = queue.Queue()
 _PIPE = {'pipe': None, 'error': None}
 
 
+def _gpu_total_gb():
+    import torch
+    return torch.cuda.get_device_properties(0).total_memory / 1e9 if torch.cuda.is_available() else 0
+
+
 def load_pipe():
-    """Loads SDXL + IP-Adapter once (first job). fp16 on GPU; model offload when VRAM is small (T4 16 GB)."""
+    """Loads the image model once (first job). Klein reads the copy saved in Google Drive when it exists, otherwise downloads from Hugging Face."""
     if _PIPE['pipe'] is not None: return _PIPE['pipe']
     import torch
-    from diffusers import StableDiffusionXLPipeline
-    pipe = StableDiffusionXLPipeline.from_pretrained('stabilityai/stable-diffusion-xl-base-1.0', torch_dtype=torch.float16, variant='fp16', use_safetensors=True)
-    pipe.load_ip_adapter('h94/IP-Adapter', subfolder='sdxl_models', weight_name='ip-adapter_sdxl.bin')
-    total = torch.cuda.get_device_properties(0).total_memory / 1e9 if torch.cuda.is_available() else 0
-    if total >= 22: pipe.to('cuda')
+    total = _gpu_total_gb()
+    if MODEL == 'sdxl':
+        from diffusers import StableDiffusionXLPipeline
+        pipe = StableDiffusionXLPipeline.from_pretrained('stabilityai/stable-diffusion-xl-base-1.0', torch_dtype=torch.float16, variant='fp16', use_safetensors=True)
+        pipe.load_ip_adapter('h94/IP-Adapter', subfolder='sdxl_models', weight_name='ip-adapter_sdxl.bin')
+    else:
+        from diffusers import Flux2KleinPipeline
+        src = next((str(d) for d in (Path(MODELS_DIR) / 'FLUX.2-klein-4B', Path('/content/IPS_Models/FLUX.2-klein-4B')) if (d / '.ips_complete').exists()), KLEIN_ID)
+        dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8) else torch.float16   # T4 has no bf16
+        print('Loading FLUX.2 klein 4B from', src, flush=True)
+        pipe = Flux2KleinPipeline.from_pretrained(src, torch_dtype=dtype)
+    if total >= 22 and MODEL != 'klein': pipe.to('cuda')
+    elif total >= 30: pipe.to('cuda')
     else: pipe.enable_model_cpu_offload()
-    pipe.enable_vae_tiling()
+    try: pipe.enable_vae_tiling()
+    except Exception: pass  # noqa: BLE001
     _PIPE['pipe'] = pipe
     return pipe
+
+
+def generate_one(pipe, sig, prompt, P, w, h, seed):
+    import torch
+    gen = torch.Generator('cuda' if torch.cuda.is_available() else 'cpu').manual_seed(seed)
+    if MODEL == 'sdxl':
+        with torch.inference_mode():
+            return pipe(prompt=prompt, negative_prompt=P.get('negative') or 'blurry, low quality, deformed, extra fingers, watermark, text', ip_adapter_image=sig,
+                        num_inference_steps=int(P.get('steps', 30)), guidance_scale=float(P.get('guidance', 7.0)), width=w, height=h, generator=gen).images[0]
+    ref = sig.copy(); ref.thumbnail((1024, 1024))      # reference picture: the Signature Image
+    try:
+        with torch.inference_mode():
+            return pipe(prompt=KEEP + prompt, image=ref, height=h, width=w, guidance_scale=1.0, num_inference_steps=4, generator=gen).images[0]
+    except TypeError as e:
+        raise RuntimeError(f'This diffusers version does not accept a reference image for FLUX.2 klein ({e}). Re-run the install cell (diffusers from GitHub).') from e
 
 
 def _mock_image(sig, prompt: str, w: int, h: int, i: int):
@@ -53,7 +86,7 @@ def run_job(jid: str):
         from PIL import Image
         P = job['payload']; job['status'] = 'RUNNING'
         prompts = [str(p).strip() for p in P['prompts'] if str(p).strip()][:MAX_PROMPTS]
-        w, h = int(P.get('width', 768)) // 8 * 8, int(P.get('height', 1344)) // 8 * 8
+        w, h = int(P.get('width', 768)) // 16 * 16, int(P.get('height', 1344)) // 16 * 16   # multiples of 16 suit both models
         w, h = max(256, min(w, 1536)), max(256, min(h, 1536))
         sig = Image.open(job['sig']).convert('RGB')
         out = WORK / 'out' / jid; out.mkdir(parents=True, exist_ok=True)
@@ -62,8 +95,7 @@ def run_job(jid: str):
         if not MOCK:
             job['stage'] = 'Loading image model (first time takes a few minutes)'
             pipe = load_pipe()
-            pipe.set_ip_adapter_scale(float(P.get('scale', 0.6)))
-            import torch
+            if MODEL == 'sdxl': pipe.set_ip_adapter_scale(float(P.get('scale', 0.6)))
         base_seed = int(P['seed']) if P.get('seed') not in (None, '') else int(time.time()) % 2**31
         pad = 3 if len(prompts) > 99 else 2
         for i, prompt in enumerate(prompts):
@@ -72,11 +104,7 @@ def run_job(jid: str):
             if MOCK:
                 time.sleep(0.15); img = _mock_image(sig, prompt, w, h, i)
             else:
-                gen = torch.Generator('cuda' if torch.cuda.is_available() else 'cpu').manual_seed(base_seed + i)
-                with torch.inference_mode():
-                    img = pipe(prompt=prompt, negative_prompt=P.get('negative') or 'blurry, low quality, deformed, extra fingers, watermark, text',
-                               ip_adapter_image=sig, num_inference_steps=int(P.get('steps', 30)), guidance_scale=float(P.get('guidance', 7.0)),
-                               width=w, height=h, generator=gen).images[0]
+                img = generate_one(pipe, sig, prompt, P, w, h, base_seed + i)
             name = f'scene-{i + 1:0{pad}d}.png'
             img.save(out / name)
             job['images'].append({'index': i + 1, 'name': name, 'url': f'/files/images/{jid}/{name}'})

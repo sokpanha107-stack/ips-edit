@@ -34,7 +34,7 @@ def hardware():
     d = shutil.disk_usage('/')
     active = sum(1 for j in image_api.JOBS.values() if j['status'] in ('QUEUED', 'RUNNING'))
     return {'ok': True, 'gpu': gpu, 'vram_total_gb': None if total is None else round(total, 1), 'vram_used_gb': None if used is None else round(used, 1),
-            'disk_total_gb': round(d.total / 1e9, 1), 'disk_used_gb': round(d.used / 1e9, 1), 'model': 'SDXL + IP-Adapter' + (' (mock)' if image_api.MOCK else ''), 'ready': True, 'active_tasks': active}
+            'disk_total_gb': round(d.total / 1e9, 1), 'disk_used_gb': round(d.used / 1e9, 1), 'model': ('FLUX.2 klein 4B' if image_api.MODEL == 'klein' else 'SDXL + IP-Adapter') + (' (mock)' if image_api.MOCK else ''), 'ready': True, 'active_tasks': active}
 
 
 image_api.register(app)
