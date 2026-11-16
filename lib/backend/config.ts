@@ -13,8 +13,8 @@ export const config = {
     const vercel = env('VERCEL_PROJECT_PRODUCTION_URL') || env('VERCEL_URL');
     return vercel ? `https://${vercel}` : '';
   },
-  videoProvider: () => env('VIDEO_PROVIDER') || 'mock',
-  voiceProvider: () => env('VOICE_PROVIDER') || 'mock',
+  videoProvider: () => env('VIDEO_PROVIDER') || 'http',
+  voiceProvider: () => env('VOICE_PROVIDER') || 'http',
   maxScenes: () => Number(env('MAX_SCENES')) || 60,
   /** How many scenes may run at the same time on the provider. */
   maxParallel: () => Number(env('MAX_PARALLEL')) || 6,

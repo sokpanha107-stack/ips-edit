@@ -288,3 +288,8 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .auto-text { font-family:ui-monospace,Menlo,monospace; font-size:12px; white-space:pre; overflow:auto; min-height:180px; }
 .auto-table { width:100%; border-collapse:collapse; font-size:11px; margin:6px 0; }.auto-table th, .auto-table td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
 .tl-panel code { font-size:10px; background:rgba(0,0,0,.08); padding:1px 4px; border-radius:4px; word-break:break-all; }
+
+.voice-length{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.lang-pick{display:flex;gap:8px;margin:10px 0 0}
+.lang-pick button{border:1px solid var(--line);background:transparent;color:var(--ink);padding:6px 14px;border-radius:999px;font:inherit;font-size:13px;cursor:pointer}
+.lang-pick button.active{background:var(--amber);color:#1a1205;border-color:var(--amber)}

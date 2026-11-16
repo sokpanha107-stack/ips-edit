@@ -2,7 +2,7 @@
 export type SceneStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
 export interface JobView {
-  id: string; engine: 'video' | 'kh' | 'en'; folder: string; status: JobStatus;
+  id: string; engine: 'video' | 'kh' | 'en'; folder: string; status: JobStatus; createdAt: string;
   progress: { total: number; done: number; failed: number; running: number };
   scenes: { idx: number; status: SceneStatus; outputUrl?: string; error?: string }[];
 }
@@ -23,14 +23,15 @@ export function getVideoEndpoint(): VideoEndpoint {
 export function setVideoEndpoint(ep: VideoEndpoint) { try { window.localStorage.setItem(VIDEO_EP, JSON.stringify({ url: ep.url.trim(), key: ep.key.trim() })); } catch { /* storage unavailable */ } }
 
 const IMAGE_EP = 'ips-image-endpoint';
-export type EngineKind = 'video' | 'image';
+export type EngineKind = 'video' | 'image' | 'voice';
+const EP_KEY: Record<'image' | 'voice', string> = { image: IMAGE_EP, voice: 'ips-voice-endpoint' };
 export const getEngineEndpoint = (k: EngineKind): VideoEndpoint => {
   if (k === 'video') return getVideoEndpoint();
-  try { const v = JSON.parse(window.localStorage.getItem(IMAGE_EP) ?? '{}'); return { url: String(v.url ?? ''), key: String(v.key ?? '') }; } catch { return { url: '', key: '' }; }
+  try { const v = JSON.parse(window.localStorage.getItem(EP_KEY[k]) ?? '{}'); return { url: String(v.url ?? ''), key: String(v.key ?? '') }; } catch { return { url: '', key: '' }; }
 };
 export const setEngineEndpoint = (k: EngineKind, ep: VideoEndpoint) => {
   if (k === 'video') return setVideoEndpoint(ep);
-  try { window.localStorage.setItem(IMAGE_EP, JSON.stringify({ url: ep.url.trim(), key: ep.key.trim() })); } catch { /* storage unavailable */ }
+  try { window.localStorage.setItem(EP_KEY[k], JSON.stringify({ url: ep.url.trim(), key: ep.key.trim() })); } catch { /* storage unavailable */ }
 };
 export const getImageEndpoint = () => getEngineEndpoint('image');
 
@@ -58,8 +59,8 @@ export const api = {
   updatePrompt: (id: string, title: string, content: string) => call<{ prompt: PromptFull }>(`/api/prompts/${id}`, { method: 'PUT', body: JSON.stringify({ title, content }) }),
   deletePrompt: (id: string) => call<{ ok: boolean }>(`/api/prompts/${id}`, { method: 'DELETE' }),
   createJob: (body: { engine: string; folder: string; masterPrompt: string; scenes: string[]; imageDataUrl?: string; voiceId?: string; options?: Record<string, unknown> }) => {
-    // Video jobs go to the GPU worker saved in Command Center (Colab, RunPod, ...). Without one, the server's VIDEO_PROVIDER is used.
-    const ep = body.engine === 'video' ? getVideoEndpoint() : null;
+    // Every job goes to the GPU worker saved in Command Center (Colab, RunPod, ...): video -> Video Engine, kh/en -> Voice Engine.
+    const ep = getEngineEndpoint(body.engine === 'video' ? 'video' : 'voice');
     const endpoint = ep?.url ? { url: ep.url, ...(ep.key ? { key: ep.key } : {}) } : undefined;
     return call<JobView>('/api/jobs', { method: 'POST', body: JSON.stringify({ ...body, ...(endpoint ? { endpoint } : {}) }) });
   },

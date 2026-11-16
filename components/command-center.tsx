@@ -38,7 +38,7 @@ function SecretInput({ value, onChange, placeholder, label }: { value: string; o
 }
 
 function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t: Labels; c: (typeof copy)['en'] | (typeof copy)['kh'] }) {
-  const Icon = kind === 'image' ? ImageIcon : Film;
+  const Icon = kind === 'image' ? ImageIcon : kind === 'voice' ? Mic2 : Film;
   const [status, setStatus] = useState<Status>({ kind: 'idle', text: '' });
   const [hw, setHw] = useState<HardwareInfo | null>(null);
   const [url, setUrl] = useState('');
@@ -108,12 +108,12 @@ function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t:
 
   return <>
       <section className="cc-block cc-video">
-        <div className="cc-title"><Icon size={15} /><strong>{kind === 'image' ? c.image : c.video}</strong>
+        <div className="cc-title"><Icon size={15} /><strong>{kind === 'image' ? c.image : kind === 'voice' ? c.voice : c.video}</strong>
           <span className={`cc-dot ${status.kind === 'ok' ? 'on' : status.kind === 'testing' ? 'wait' : ''}`} />
         </div>
         <input className="studio-input" type="url" inputMode="url" aria-label="API URL" placeholder={c.urlPh} value={url} autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={(e) => { setUrl(e.target.value); connectedRef.current = false; setStatus({ kind: 'idle', text: '' }); }} />
         <SecretInput value={key} onChange={(v) => { setKey(v); connectedRef.current = false; }} placeholder={c.keyPh} label="API key" />
-        <p className="access-help">{kind === 'image' ? c.imageHelp : c.videoHelp}</p>
+        <p className="access-help">{kind === 'image' ? c.imageHelp : kind === 'voice' ? c.voiceHelp : c.videoHelp}</p>
         <button type="button" className="access-test" onClick={connect} disabled={status.kind === 'testing'}><Plug size={14} /> {status.kind === 'testing' ? c.connecting : c.connect}</button>
         {status.kind !== 'idle' && <div className={`access-status ${status.kind}`}>{status.text}</div>}
 
@@ -148,11 +148,7 @@ export function CommandCenter({ open, onClose, t, language, show }: { open: bool
     <div className="drawer-header"><h2>{t.commandCenter}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div>
     <div className="drawer-content">
       {none && <p className="access-help">Every engine is switched off in Settings → Menu &amp; features.</p>}
-      {show.voice && <section className="cc-block">
-        <div className="cc-title"><Mic2 size={15} /><strong>{c.voice}</strong>{savedFlash && <span className="cc-saved"><Check size={12} /> {c.saved}</span>}</div>
-        <SecretInput value={voiceKey} onChange={onVoice} placeholder={c.voicePh} label={c.voice} />
-        <p className="access-help">{c.voiceHelp}</p>
-      </section>}
+      {show.voice && <EnginePanel kind="voice" open={open} t={t} c={c} />}
       {show.video && <EnginePanel kind="video" open={open} t={t} c={c} />}
       {show.image && <EnginePanel kind="image" open={open} t={t} c={c} />}
     </div>

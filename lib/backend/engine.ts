@@ -23,9 +23,10 @@ export interface NewJob {
 
 export async function createJob(input: NewJob): Promise<Job> {
   if (input.scenes.length > config.maxScenes()) throw new Error(`Too many scenes (max ${config.maxScenes()})`);
-  const useEndpoint = input.engine === 'video' && !!input.endpoint?.url;
+  const useEndpoint = !!input.endpoint?.url;
   const provider = useEndpoint ? 'http' : providerFor(input.engine);
   getProvider(provider); // throws if unknown
+  if (provider === 'http' && !useEndpoint) throw new Error(input.engine === 'video' ? 'Video Engine is not connected. Open Command Center, enter the Video Engine URL and press Connect.' : 'Voice Engine is not connected. Open Command Center, enter the Voice Engine URL and press Connect.');
   const ts = new Date().toISOString();
   const job: Job = {
     id: randomUUID(), engine: input.engine, folder: input.folder, masterPrompt: input.masterPrompt, provider,
