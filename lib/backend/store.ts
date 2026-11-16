@@ -115,6 +115,15 @@ class SupabaseStore implements Store {
   async deleteJob(id: string) { this.check(await this.db.from('ips_jobs').delete().eq('id', id)); }
 }
 
+let cachedDb: SupabaseClient | null | undefined;
+/** The shared Supabase client (server only, service-role key), or null when Supabase is not configured. */
+export function getSupabase(): SupabaseClient | null {
+  if (cachedDb !== undefined) return cachedDb;
+  const url = config.supabaseUrl(), key = config.supabaseServiceKey();
+  cachedDb = url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
+  return cachedDb;
+}
+
 let cached: Store | null = null;
 export function getStore(): Store {
   if (cached) return cached;

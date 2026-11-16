@@ -48,7 +48,15 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+export interface PromptSummary { id: string; title: string; created_at: string; chars: number; preview: string }
+export interface PromptFull { id: string; title: string; content: string; created_at: string }
+
 export const api = {
+  listPrompts: () => call<{ persistent: boolean; prompts: PromptSummary[] }>('/api/prompts'),
+  getPrompt: (id: string) => call<{ prompt: PromptFull }>(`/api/prompts/${id}`),
+  createPrompt: (title: string, content: string) => call<{ prompt: PromptFull }>('/api/prompts', { method: 'POST', body: JSON.stringify({ title, content }) }),
+  updatePrompt: (id: string, title: string, content: string) => call<{ prompt: PromptFull }>(`/api/prompts/${id}`, { method: 'PUT', body: JSON.stringify({ title, content }) }),
+  deletePrompt: (id: string) => call<{ ok: boolean }>(`/api/prompts/${id}`, { method: 'DELETE' }),
   createJob: (body: { engine: string; folder: string; masterPrompt: string; scenes: string[]; imageDataUrl?: string; voiceId?: string; options?: Record<string, unknown> }) => {
     // Video jobs go to the GPU worker saved in Command Center (Colab, RunPod, ...). Without one, the server's VIDEO_PROVIDER is used.
     const ep = body.engine === 'video' ? getVideoEndpoint() : null;

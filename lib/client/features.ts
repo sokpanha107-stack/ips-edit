@@ -1,12 +1,12 @@
 /** Which app features are shown, and in what order. Stored in localStorage and shared by the Sidebar, Settings and Command Center. */
-export type FeatureId = 'script' | 'voices' | 'voice' | 'video' | 'image' | 'history' | 'command';
+export type FeatureId = 'script' | 'prompts' | 'voices' | 'voice' | 'video' | 'image' | 'history' | 'command';
 export interface FeatureCfg { id: FeatureId; on: boolean }
 
 export const FEATURE_LABEL: Record<FeatureId, string> = {
-  script: 'Script Preparation', voices: 'Voice Library', voice: 'Voice Engine', video: 'Video Engine', image: 'Image Engine', history: 'History Project', command: 'Command Center',
+  script: 'Script Preparation', prompts: 'Prompt Library', voices: 'Voice Library', voice: 'Voice Engine', video: 'Video Engine', image: 'Image Engine', history: 'History Project', command: 'Command Center',
 };
 export const FEATURE_STORE = 'ips-features';
-export const DEFAULT_FEATURES: FeatureCfg[] = (['script', 'voices', 'voice', 'video', 'image', 'history', 'command'] as FeatureId[]).map((id) => ({ id, on: true }));
+export const DEFAULT_FEATURES: FeatureCfg[] = (['script', 'prompts', 'voices', 'voice', 'video', 'image', 'history', 'command'] as FeatureId[]).map((id) => ({ id, on: true }));
 
 /** Accepts anything from storage: drops unknown ids, de-duplicates, and appends features added in newer versions (switched on). */
 export function sanitizeFeatures(raw: unknown): FeatureCfg[] {
