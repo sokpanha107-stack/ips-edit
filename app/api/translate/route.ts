@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAccess } from '@/lib/backend/auth';
+import { config } from '@/lib/backend/config';
+import { requireUser } from '@/lib/backend/session';
 import { normalizeBase, type Endpoint } from '@/lib/backend/endpoint';
 
 export const dynamic = 'force-dynamic';
@@ -60,13 +61,18 @@ async function viaFastApi(ep: Endpoint, text: string, from: string, to: string):
 
 /** Khmer <-> English: free deep-translator backend first, MyMemory as the fallback (no key needed). Khmer quality is basic: always proofread. */
 export async function POST(req: Request) {
-  const denied = requireAccess(req);
-  if (denied) return denied;
+  const au = await requireUser(); if ('res' in au) return au.res;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid request' }, { status: 400 });
   const { text, from, to, endpoint } = parsed.data;
   if (from === to) return NextResponse.json({ ok: true, text });
   const candidates: Endpoint[] = [];
+  // 1st choice: the free Python function (deep-translator) that ships with this app, called with the user's own session token.
+  try {
+    const r = await fetch(`${config.pythonBase()}/translate`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${au.ctx.accessToken ?? ''}` }, body: JSON.stringify({ text, from, to }), cache: 'no-store', signal: AbortSignal.timeout(25_000) });
+    const d = await r.json().catch(() => null);
+    if (r.ok && d?.ok && typeof d.text === 'string') return NextResponse.json({ ok: true, text: d.text, via: 'deep-translator' });
+  } catch { /* fall through */ }
   if (process.env.TRANSLATE_API_URL) candidates.push({ url: process.env.TRANSLATE_API_URL, key: process.env.TRANSLATE_API_KEY });
   if (endpoint?.url) candidates.push(endpoint);
   for (const ep of candidates) {

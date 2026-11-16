@@ -1,6 +1,14 @@
--- Run once in Supabase: SQL Editor -> New query -> paste -> Run.
-create table if not exists ips_jobs (
+-- ════════════════════════════════════════════════════════════════════
+--  IPS Edit · multi-tenant schema with strict Row Level Security
+--  Run once: Supabase → SQL Editor → New query → paste everything → Run.
+--  Safe to run again (idempotent). Every table has user_id and the rule
+--  auth.uid() = user_id for select / insert / update / delete.
+-- ════════════════════════════════════════════════════════════════════
+
+-- ── 1. Tables ────────────────────────────────────────────────────────
+create table if not exists public.ips_jobs (
   id            text primary key,
+  user_id       uuid not null default auth.uid() references auth.users(id) on delete cascade,
   engine        text not null check (engine in ('video','kh','en')),
   folder        text not null,
   master_prompt text not null,
@@ -13,9 +21,10 @@ create table if not exists ips_jobs (
   updated_at    timestamptz not null default now()
 );
 
-create table if not exists ips_scenes (
-  job_id      text not null references ips_jobs(id) on delete cascade,
+create table if not exists public.ips_scenes (
+  job_id      text not null references public.ips_jobs(id) on delete cascade,
   idx         integer not null,
+  user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
   prompt      text not null,
   status      text not null default 'queued',
   external_id text,
@@ -27,19 +36,114 @@ create table if not exists ips_scenes (
   primary key (job_id, idx)
 );
 
-create index if not exists ips_jobs_created_idx on ips_jobs (created_at desc);
-
--- Only the server (service role key) touches these tables. No public policies.
-alter table ips_jobs   enable row level security;
-alter table ips_scenes enable row level security;
-
--- Prompt Library ("vault" for big master prompts). Run this in Supabase -> SQL Editor.
-create table if not exists prompt_vault (
+create table if not exists public.prompt_vault (
   id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
   title       text not null check (char_length(title) between 1 and 200),
   content     text not null check (char_length(content) between 1 and 400000),
   created_at  timestamptz not null default now()
 );
-create index if not exists prompt_vault_created_idx on prompt_vault (created_at desc);
--- Only the server (service role key) reads/writes this table. No public policies, so the browser can never touch it directly.
-alter table prompt_vault enable row level security;
+
+-- API Key Vault: the key is stored ENCRYPTED (AES-256-GCM, done by the server). The browser never receives it back.
+create table if not exists public.api_keys (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  service_name    text not null check (service_name in ('runpod','voice_api')),
+  key_cipher      text not null,
+  key_hint        text not null default '',
+  endpoint        text,
+  last_status     text check (last_status in ('connected','failed')),
+  last_checked_at timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (user_id, service_name)
+);
+
+-- "Document" file manager: one row per folder / file / zip. The bytes live in Storage bucket "documents".
+create table if not exists public.documents (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  parent_id    uuid references public.documents(id) on delete cascade,
+  kind         text not null check (kind in ('folder','file','zip')),
+  name         text not null check (char_length(name) between 1 and 200),
+  storage_path text,
+  mime         text,
+  size_bytes   bigint not null default 0,
+  source       text check (source in ('upload','image','voice','video')),
+  created_at   timestamptz not null default now(),
+  check ((kind = 'folder') = (storage_path is null))
+);
+create index if not exists documents_user_parent_idx on public.documents (user_id, parent_id, created_at desc);
+
+create table if not exists public.push_subscriptions (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  endpoint     text not null unique,
+  subscription jsonb not null,            -- the full PushSubscription JSON (endpoint + keys.p256dh + keys.auth)
+  user_agent   text,
+  created_at   timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+
+-- ── 1b. Upgrade from the old single-user schema (no-op on a fresh project) ──
+alter table public.ips_jobs     add column if not exists user_id uuid default auth.uid() references auth.users(id) on delete cascade;
+alter table public.ips_scenes   add column if not exists user_id uuid default auth.uid() references auth.users(id) on delete cascade;
+alter table public.prompt_vault add column if not exists user_id uuid default auth.uid() references auth.users(id) on delete cascade;
+create index if not exists ips_jobs_user_created_idx on public.ips_jobs (user_id, created_at desc);
+create index if not exists prompt_vault_user_created_idx on public.prompt_vault (user_id, created_at desc);
+
+-- A document's parent folder must belong to the same user (blocks writing into someone else's folder).
+create or replace function public.documents_same_owner() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.parent_id is not null and not exists (
+    select 1 from public.documents p where p.id = new.parent_id and p.user_id = new.user_id and p.kind = 'folder'
+  ) then
+    raise exception 'parent folder not found';
+  end if;
+  return new;
+end $$;
+drop trigger if exists documents_same_owner_trg on public.documents;
+create trigger documents_same_owner_trg before insert or update of parent_id, user_id on public.documents
+  for each row execute function public.documents_same_owner();
+
+-- ── 2. Row Level Security: owner-only on EVERY table ─────────────────
+do $$
+declare t text;
+begin
+  foreach t in array array['ips_jobs','ips_scenes','prompt_vault','api_keys','documents','push_subscriptions'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('alter table public.%I force row level security', t);
+    execute format('revoke all on table public.%I from anon, public', t);
+    execute format('grant select, insert, update, delete on table public.%I to authenticated', t);
+
+    execute format('drop policy if exists "%1$s_select_own" on public.%1$I', t);
+    execute format('drop policy if exists "%1$s_insert_own" on public.%1$I', t);
+    execute format('drop policy if exists "%1$s_update_own" on public.%1$I', t);
+    execute format('drop policy if exists "%1$s_delete_own" on public.%1$I', t);
+
+    execute format('create policy "%1$s_select_own" on public.%1$I for select to authenticated using (auth.uid() = user_id)', t);
+    execute format('create policy "%1$s_insert_own" on public.%1$I for insert to authenticated with check (auth.uid() = user_id)', t);
+    execute format('create policy "%1$s_update_own" on public.%1$I for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)', t);
+    execute format('create policy "%1$s_delete_own" on public.%1$I for delete to authenticated using (auth.uid() = user_id)', t);
+  end loop;
+end $$;
+
+-- ── 3. Storage: private bucket "documents", each user only inside folder "<their uid>/" ──
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('documents', 'documents', false, 524288000)      -- 500 MB per file
+on conflict (id) do update set public = false, file_size_limit = 524288000;
+
+drop policy if exists "documents_obj_select_own" on storage.objects;
+drop policy if exists "documents_obj_insert_own" on storage.objects;
+drop policy if exists "documents_obj_update_own" on storage.objects;
+drop policy if exists "documents_obj_delete_own" on storage.objects;
+create policy "documents_obj_select_own" on storage.objects for select to authenticated
+  using (bucket_id = 'documents' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "documents_obj_insert_own" on storage.objects for insert to authenticated
+  with check (bucket_id = 'documents' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "documents_obj_update_own" on storage.objects for update to authenticated
+  using (bucket_id = 'documents' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'documents' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "documents_obj_delete_own" on storage.objects for delete to authenticated
+  using (bucket_id = 'documents' and (storage.foldername(name))[1] = auth.uid()::text);

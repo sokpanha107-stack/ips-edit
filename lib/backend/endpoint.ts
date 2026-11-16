@@ -12,16 +12,20 @@ export interface Hardware {
   activeTasks?: number;
 }
 
-/** Trim, force https, drop trailing slash and any /run or /runsync suffix. Throws on unsafe input. */
-export function normalizeBase(raw: string): string {
+/** https only, and never an internal address (blocks SSRF to localhost / private networks / cloud metadata). */
+export function publicHttpsUrl(raw: string): URL {
   let u: URL;
-  try { u = new URL(raw.trim()); } catch { throw new Error('Endpoint URL is not valid'); }
-  if (u.protocol !== 'https:') throw new Error('Endpoint URL must start with https://');
+  try { u = new URL(raw.trim()); } catch { throw new Error('URL is not valid'); }
+  if (u.protocol !== 'https:') throw new Error('URL must start with https://');
   const host = u.hostname.toLowerCase();
   const privateV4 = /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.)/.test(host);
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || privateV4 || host.includes(':')) {
-    throw new Error('Endpoint URL must be a public address');
-  }
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || privateV4 || host.includes(':')) throw new Error('URL must be a public address');
+  return u;
+}
+
+/** Trim, force https, drop trailing slash and any /run or /runsync suffix. Throws on unsafe input. */
+export function normalizeBase(raw: string): string {
+  const u = publicHttpsUrl(raw);
   const path = u.pathname.replace(/\/(run|runsync|health|status\/[^/]+)\/?$/, '').replace(/\/+$/, '');
   return `${u.origin}${path}`;
 }

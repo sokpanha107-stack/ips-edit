@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAccess } from '@/lib/backend/auth';
+import { requireUser } from '@/lib/backend/session';
 import { authHeaders, fetchJson, isRunpod, normalizeBase, normalizeHardware, type Hardware } from '@/lib/backend/endpoint';
 
 export const dynamic = 'force-dynamic';
@@ -20,8 +20,7 @@ const schema = z.object({
  *    (the worker answers {engine:'hardware'} without loading the model).
  */
 export async function POST(req: Request) {
-  const denied = requireAccess(req);
-  if (denied) return denied;
+  const au = await requireUser(); if ('res' in au) return au.res;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid request' }, { status: 400 });
 

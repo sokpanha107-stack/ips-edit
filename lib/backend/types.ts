@@ -17,6 +17,7 @@ export interface Scene {
 
 export interface Job {
   id: string;
+  userId?: string;
   engine: Engine;
   folder: string;
   masterPrompt: string;

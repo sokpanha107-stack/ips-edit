@@ -1,5 +1,6 @@
 'use client';
 
+import { api } from '@/lib/client/api';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Download, ImagePlus, Lock, Send, Sparkles, Unlock, X } from 'lucide-react';
 import { cancelImageJob, fetchImageFile, imageStatus, parsePrompts, startImageJob, type ImageJob, type ImageOptions, type ImageStatus } from '@/lib/client/imageEngine';
@@ -73,7 +74,12 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
           await onImages([file]);
           setThumbs((t) => [...t, { name: im.name, url: URL.createObjectURL(file) }]);
         }
-        if (s.status === 'DONE') { setPhase('done'); onNotice(c.done); return; }
+        if (s.status === 'DONE') {
+          setPhase('done'); onNotice(c.done);
+          // file the pictures into a new Document folder + push notification (best effort: never blocks the Timeline)
+          void api.fileOutputs('image', `Images ${prompts.length}`, s.images.map((im) => ({ name: im.name, url: im.url }))).catch(() => undefined);
+          return;
+        }
         if (s.status === 'FAILED' || s.status === 'CANCELLED') { setPhase('error'); setErr(s.status === 'CANCELLED' ? 'Cancelled.' : s.error || 'Image generation failed.'); return; }
       }
     } catch (e) {

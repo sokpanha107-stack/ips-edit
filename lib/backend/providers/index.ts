@@ -1,19 +1,14 @@
-import { config } from '../config';
-import { falProvider } from './fal';
+import { gttsProvider } from './gtts';
 import { httpProvider } from './http';
-import { runpodProvider } from './runpod';
 import { ProviderConfigError, type Provider } from './types';
 
-const registry: Record<string, Provider> = { fal: falProvider, runpod: runpodProvider, http: httpProvider };
+/** http = the user's own GPU worker (RunPod / Colab) using the key in their API Key Vault. gtts = free Python voice (no key). */
+const registry: Record<string, Provider> = { http: httpProvider, gtts: gttsProvider };
 
 export function getProvider(name: string): Provider {
   const p = registry[name];
-  if (!p) throw new ProviderConfigError(`Unknown provider "${name}". Use one of: ${Object.keys(registry).join(', ')}`);
+  if (!p) throw new ProviderConfigError(`Unknown provider "${name}".`);
   return p;
-}
-
-export function providerFor(engine: 'video' | 'kh' | 'en') {
-  return engine === 'video' ? config.videoProvider() : config.voiceProvider();
 }
 
 export { ProviderConfigError };

@@ -11,14 +11,17 @@ import { PromptLibrary } from '@/components/prompt-library';
 import { CommandCenter } from '@/components/command-center';
 import { useHeartbeat } from '@/lib/client/heartbeat';
 import { addVoice, blobToDataUrl, deleteVoices as dbDeleteVoices, fmtLen, getVoiceBlob, listVoices, type VoiceMeta } from '@/lib/client/voiceStore';
-import { api, getAccessKey, imageToDataUrl, isFinished, setAccessKey, splitScenes, type JobView } from '@/lib/client/api';
+import { api, imageToDataUrl, isFinished, splitScenes, type JobView, type VaultService } from '@/lib/client/api';
+import { AccountPanel } from '@/components/account-panel';
+import { ApiKeyVault } from '@/components/api-key-vault';
+import { DocumentManager } from '@/components/document-manager';
 import {
-  AudioLines, Check, ChevronDown, Library, Square, Clapperboard, Image as ImageIcon, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
+  AudioLines, Check, ChevronDown, Cloud, Library, Square, Clapperboard, Image as ImageIcon, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
   Folder, NotebookPen, Palette, Play, Radio, Send, Settings2, ShieldCheck, Sun, Trash2, Upload, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 
-type Tab = 'script' | 'prompts' | 'voices' | 'kh' | 'video' | 'image' | 'en' | 'timeline' | 'history';
-const TAB_FEATURE: Partial<Record<Tab, FeatureId>> = { script: 'script', prompts: 'prompts', voices: 'voices', kh: 'voice', en: 'voice', video: 'video', image: 'image', history: 'history' };
+type Tab = 'script' | 'prompts' | 'documents' | 'voices' | 'kh' | 'video' | 'image' | 'en' | 'timeline' | 'history';
+const TAB_FEATURE: Partial<Record<Tab, FeatureId>> = { script: 'script', prompts: 'prompts', documents: 'documents', voices: 'voices', kh: 'voice', en: 'voice', video: 'video', image: 'image', history: 'history' };
 type ThemeMode = 'system' | 'light' | 'dark';
 type Language = 'en' | 'kh';
 
@@ -128,7 +131,7 @@ function countScenes(script: string) {
   return marked.length > 0 ? marked.length : lines.length;
 }
 
-function EngineWorkspace({ type, t, language, anchor = [], onAnchor, draft, onDraft, voiceProfile, image, imageLocked, onImage, onLock, onNotice }: { type: EngineKey; t: Copy; language: Language; anchor?: AudioItem[]; onAnchor?: (items: AudioItem[]) => void; draft: JobDraft; onDraft: (patch: Partial<JobDraft>) => void; voiceProfile?: Voice; image?: BaseImage; imageLocked?: boolean; onImage?: (file: File) => void; onLock?: () => void; onNotice: (message: string) => void }) {
+function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, draft, onDraft, voiceProfile, image, imageLocked, onImage, onLock, onNotice }: { blocked?: string; type: EngineKey; t: Copy; language: Language; anchor?: AudioItem[]; onAnchor?: (items: AudioItem[]) => void; draft: JobDraft; onDraft: (patch: Partial<JobDraft>) => void; voiceProfile?: Voice; image?: BaseImage; imageLocked?: boolean; onImage?: (file: File) => void; onLock?: () => void; onNotice: (message: string) => void }) {
   const isVideo = type === 'video';
   const isKh = type === 'kh';
   const vc = videoCopy[language];
@@ -151,6 +154,7 @@ function EngineWorkspace({ type, t, language, anchor = [], onAnchor, draft, onDr
   else if (isVideo && audio.length > 0 && audio.length !== wanted) problem = vc.mismatch(audio.length, wanted);
   else if (type === 'en' && anchor.length > 0 && anchor.length !== wanted) problem = vc.anchorMismatch(anchor.length, wanted);
   else if (scriptScenes > 0 && scriptScenes !== wanted) problem = `${t.scriptHas} ${scriptScenes} ${t.scenesWord} ${t.butSet} ${wanted}`;
+  if (blocked) problem = blocked;
   const ready = problem === '';
   const summary = `${draft.folder.trim()} · ${wanted} ${t.scenesWord}`;
   const [jobId, setJobId] = useState<string | null>(null);
@@ -244,37 +248,10 @@ function HistoryProject({ t }: { t: Copy }) {
     <div className="history-list">{jobs && !list.length && !err && <p className="library-empty">No projects yet. Finished jobs appear here.</p>}{list.map((job, index) => <article className="history-item" key={job.id}><div className="history-index">{String(index + 1).padStart(2, '0')}</div><div className="history-info"><strong>{job.folder || 'Untitled'}</strong><span>{label[job.engine]} · {new Date(job.createdAt).toLocaleString()} · {job.progress.done}/{job.progress.total}</span></div><span className="history-status"><Check size={13} /> {job.status}</span><ChevronRight size={17} className="history-arrow" /></article>)}</div></section>;
 }
 
-type Health = { storage: string; auth: string; providers: { video: string; voice: string } };
-function AccessKeyField({ t, language }: { t: Copy; language: Language }) {
-  const kh = language === 'kh';
-  const [value, setValue] = useState('');
-  const [show, setShow] = useState(false);
-  const [state, setState] = useState<{ kind: 'idle' | 'testing' | 'ok' | 'bad'; text: string }>({ kind: 'idle', text: '' });
-  useEffect(() => { setValue(getAccessKey()); }, []);
-  const test = async () => {
-    setAccessKey(value);
-    setState({ kind: 'testing', text: kh ? 'កំពុងភ្ជាប់…' : 'Connecting…' });
-    try {
-      const health: Health = await (await fetch('/api/health', { cache: 'no-store' })).json();
-      await api.listJobs();
-      const store = health.storage.startsWith('supabase') ? 'Supabase ✓' : (kh ? 'Memory (មិនទាន់ភ្ជាប់ Supabase)' : 'Memory (Supabase not connected)');
-      setState({ kind: 'ok', text: `${kh ? 'ភ្ជាប់បាន' : 'Connected'} · ${store} · video: ${health.providers.video} · voice: ${health.providers.voice}` });
-    } catch (error) {
-      setState({ kind: 'bad', text: error instanceof Error ? error.message : (kh ? 'ភ្ជាប់មិនបាន' : 'Could not connect') });
-    }
-  };
-  return <div className="access-field">
-    <div className="access-row"><input className="studio-input" type={show ? 'text' : 'password'} aria-label={t.apiKey} placeholder={t.apiPlaceholder} value={value} autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={(event) => { setValue(event.target.value); setAccessKey(event.target.value); setState({ kind: 'idle', text: '' }); }} /><button type="button" className="icon-button access-eye" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide' : 'Show'}>{show ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-    <p className="access-help">{kh ? 'ដាក់ពាក្យសម្ងាត់ដូចគ្នានឹង IPS_ACCESS_KEY ក្នុង Vercel។ រក្សាទុកក្នុងឧបករណ៍នេះប៉ុណ្ណោះ។' : 'Use the same value as IPS_ACCESS_KEY in Vercel. Stored on this device only.'}</p>
-    <button type="button" className="access-test" onClick={test} disabled={state.kind === 'testing'}><ShieldCheck size={14} /> {kh ? 'រក្សាទុក និងតេស្តការភ្ជាប់' : 'Save & test connection'}</button>
-    {state.kind !== 'idle' && <div className={`access-status ${state.kind}`}>{state.text}</div>}
-  </div>;
-}
-
-function SettingsDrawer({ open, onClose, t, language, setLanguage, themeMode, setThemeMode, eyeCare, setEyeCare, features, setFeatures }: { features: FeatureCfg[]; setFeatures: (f: FeatureCfg[]) => void; open: boolean; onClose: () => void; t: Copy; language: Language; setLanguage: (language: Language) => void; themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; eyeCare: boolean; setEyeCare: () => void }) {
+function SettingsDrawer({ vault, setVault, open, onClose, t, language, setLanguage, themeMode, setThemeMode, eyeCare, setEyeCare, features, setFeatures }: { vault: VaultService[] | null; setVault: (v: VaultService[]) => void; features: FeatureCfg[]; setFeatures: (f: FeatureCfg[]) => void; open: boolean; onClose: () => void; t: Copy; language: Language; setLanguage: (language: Language) => void; themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; eyeCare: boolean; setEyeCare: () => void }) {
   if (!open) return null;
   const themes: [ThemeMode, string, LucideIcon][] = [['system', t.system, Radio], ['light', t.light, Sun], ['dark', t.dark, Moon]];
-  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><h2>{t.settings}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div><div className="drawer-content"><div className="settings-block"><div className="settings-title"><Lock size={17} /><strong>{t.apiTitle}</strong></div><AccessKeyField t={t} language={language} /></div><div className="settings-block"><div className="settings-title"><Palette size={17} /><strong>{t.language}</strong></div><div className="segmented"><button type="button" className={language === 'kh' ? 'active' : ''} onClick={() => setLanguage('kh')}>ភាសាខ្មែរ</button><button type="button" className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')}>English</button></div></div><div className="settings-block"><div className="settings-title"><Sun size={17} /><strong>{t.theme}</strong></div><div className="theme-options">{themes.map(([key, label, ThemeIcon]) => <button type="button" key={key} className={themeMode === key ? 'active' : ''} onClick={() => setThemeMode(key)}><ThemeIcon size={15} />{label}</button>)}</div><div className="setting-row compact"><strong>{t.eyeCare}</strong><Toggle checked={eyeCare} onChange={setEyeCare} label={t.eyeCare} /></div></div><FeatureSettings features={features} onChange={setFeatures} /></div><button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.save}</button></aside></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><h2>{t.settings}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div><div className="drawer-content"><div className="settings-block"><div className="settings-title"><Lock size={17} /><strong>API Key Vault</strong></div><ApiKeyVault services={vault} onChange={setVault} /></div><div className="settings-block"><div className="settings-title"><ShieldCheck size={17} /><strong>Account &amp; Notifications</strong></div><AccountPanel /></div><div className="settings-block"><div className="settings-title"><Palette size={17} /><strong>{t.language}</strong></div><div className="segmented"><button type="button" className={language === 'kh' ? 'active' : ''} onClick={() => setLanguage('kh')}>ភាសាខ្មែរ</button><button type="button" className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')}>English</button></div></div><div className="settings-block"><div className="settings-title"><Sun size={17} /><strong>{t.theme}</strong></div><div className="theme-options">{themes.map(([key, label, ThemeIcon]) => <button type="button" key={key} className={themeMode === key ? 'active' : ''} onClick={() => setThemeMode(key)}><ThemeIcon size={15} />{label}</button>)}</div><div className="setting-row compact"><strong>{t.eyeCare}</strong><Toggle checked={eyeCare} onChange={setEyeCare} label={t.eyeCare} /></div></div><FeatureSettings features={features} onChange={setFeatures} /></div><button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.save}</button></aside></div>;
 }
 
 export default function Home() {
@@ -284,6 +261,11 @@ export default function Home() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [features, setFeaturesState] = useState<FeatureCfg[]>(DEFAULT_FEATURES);
+  const [vault, setVault] = useState<VaultService[] | null>(null);
+  useEffect(() => { api.vault().then((r) => setVault(r.services)).catch(() => setVault([])); }, []);
+  // opened from a push notification (?tab=documents)
+  useEffect(() => { const q = new URLSearchParams(window.location.search).get('tab'); if (q === 'documents') setActiveTab('documents'); }, []);
+  const runpodReady = !!vault?.find((v) => v.service === 'runpod' && v.hasKey && v.endpoint);
   const [voiceMenu, setVoiceMenu] = useState(false);
   const timelineRef = useRef<TimelineHandle>(null);
   const setFeatures = (f: FeatureCfg[]) => { setFeaturesState(f); saveFeatures(f); };
@@ -333,7 +315,7 @@ export default function Home() {
   const deleteVoices = (names: string[]) => { void dbDeleteVoices(voices.filter((v) => names.includes(v.name)).map((v) => v.id)); setVoices((current) => current.filter((voice) => !names.includes(voice.name))); setAssigned((current) => ({ kh: names.includes(current.kh) ? '' : current.kh, en: names.includes(current.en) ? '' : current.en })); showNotice(t.deletedVoices); };
   const addVoiceFile = async (file: File, kind: string) => { try { await addVoice(file, kind); setVoices((await listVoices()).map(toVoice)); showNotice(t.voiceAdded); } catch (e) { showNotice(e instanceof Error ? e.message : 'Could not add the voice'); } };
   const addImage = (file: File) => { setBaseImage({ url: URL.createObjectURL(file), name: file.name }); showNotice(t.imageReady); };
-  const renderScreen = () => { if (activeTab === 'script' || activeTab === 'prompts' || activeTab === 'timeline' || activeTab === 'image') return null; if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onAdd={addVoiceFile} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
+  const renderScreen = () => { if (activeTab === 'script' || activeTab === 'prompts' || activeTab === 'documents' || activeTab === 'timeline' || activeTab === 'image') return null; if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onAdd={addVoiceFile} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" blocked={runpodReady ? undefined : (vault ? 'Add your RunPod key + Endpoint ID in Settings → API Key Vault to use the Video Engine.' : 'Loading…')} type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
   const items = navItems(t);
 
   const sendScript = (target: 'kh' | 'en' | 'video', text: string) => updateDraft(target, { script: text, count: String(splitScenes(text).length || drafts[target].count) });
@@ -344,8 +326,8 @@ export default function Home() {
   useEffect(() => { const need = TAB_FEATURE[activeTab]; if (need && !isOn(features, need)) setActiveTab(firstTab()); }, [features, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'kh' || activeTab === 'en') setVoiceMenu(true); }, [activeTab]);
   useEffect(() => { if (!isOn(features, 'command')) setCommandOpen(false); }, [features]);
-  const tabIcon: Record<string, LucideIcon> = { script: NotebookPen, prompts: Library, voices: Mic2, video: Film, image: ImageIcon, history: History };
-  const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', voices: t.voiceLibrary, video: t.videoEngine, image: 'Image Engine', history: t.history };
+  const tabIcon: Record<string, LucideIcon> = { script: NotebookPen, prompts: Library, documents: Cloud, voices: Mic2, video: Film, image: ImageIcon, history: History };
+  const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: t.voiceLibrary, video: t.videoEngine, image: 'Image Engine', history: t.history };
   const tabIdx = menuOpen ? 0 : -1;
 
   return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button><h1 className="top-title">IPS Edit</h1></header>
@@ -373,7 +355,8 @@ export default function Home() {
       <div hidden={activeTab !== 'script'}><ScriptPrepScreen language={language} anchor={drafts.video.audio.map((a) => a.seconds)} onSend={sendScript} onNotice={showNotice} /></div>
       <div hidden={activeTab !== 'timeline'}><TimelineEditor ref={timelineRef} scripts={[{ label: 'KH', text: drafts.kh.script }, { label: 'EN', text: drafts.en.script }]} onNotice={showNotice} /></div>
       <div hidden={activeTab !== 'prompts'}>{on('prompts') && <PromptLibrary active={activeTab === 'prompts'} onNotice={showNotice} />}</div>
+      <div hidden={activeTab !== 'documents'}>{on('documents') && <DocumentManager active={activeTab === 'documents'} onNotice={showNotice} />}</div>
       <div hidden={activeTab !== 'image'}>{on('image') && <ImageEngine language={language} onImages={(files) => timelineRef.current?.addImages(files)} onNotice={showNotice} />}</div>
       {renderScreen()}</div>
-    <CommandCenter open={commandOpen && on('command')} onClose={() => setCommandOpen(false)} t={t} language={language} show={{ voice: on('voice'), video: on('video'), image: on('image') }} /><SettingsDrawer features={features} setFeatures={setFeatures} open={settingsOpen} onClose={() => setSettingsOpen(false)} t={t} language={language} setLanguage={setLanguage} themeMode={themeMode} setThemeMode={setThemeMode} eyeCare={eyeCare} setEyeCare={() => setEyeCare((value) => !value)} />{splash !== 'done' && <Splash leaving={splash === 'leaving'} onSkip={() => setSplash('leaving')} t={t} />}</main>;
+    <CommandCenter open={commandOpen && on('command')} onClose={() => setCommandOpen(false)} t={t} language={language} show={{ voice: on('voice'), video: on('video'), image: on('image') }} /><SettingsDrawer vault={vault} setVault={setVault} features={features} setFeatures={setFeatures} open={settingsOpen} onClose={() => setSettingsOpen(false)} t={t} language={language} setLanguage={setLanguage} themeMode={themeMode} setThemeMode={setThemeMode} eyeCare={eyeCare} setEyeCare={() => setEyeCare((value) => !value)} />{splash !== 'done' && <Splash leaving={splash === 'leaving'} onSkip={() => setSplash('leaving')} t={t} />}</main>;
 }

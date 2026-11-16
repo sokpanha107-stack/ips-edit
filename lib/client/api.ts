@@ -8,14 +8,7 @@ export interface JobView {
 }
 export const isFinished = (s: JobStatus) => s === 'completed' || s === 'partial' || s === 'failed' || s === 'cancelled';
 
-const KEY = 'ips-access-key';
-export function getAccessKey() { try { return window.localStorage.getItem(KEY) ?? ''; } catch { return ''; } }
-export function setAccessKey(value: string) { try { window.localStorage.setItem(KEY, value.trim()); } catch { /* storage unavailable */ } }
-
-const VOICE_KEY = 'ips-voice-key';
 const VIDEO_EP = 'ips-video-endpoint';
-export function getVoiceKey() { try { return window.localStorage.getItem(VOICE_KEY) ?? ''; } catch { return ''; } }
-export function setVoiceKey(value: string) { try { window.localStorage.setItem(VOICE_KEY, value.trim()); } catch { /* storage unavailable */ } }
 export interface VideoEndpoint { url: string; key: string }
 export function getVideoEndpoint(): VideoEndpoint {
   try { const v = JSON.parse(window.localStorage.getItem(VIDEO_EP) ?? '{}'); return { url: String(v.url ?? ''), key: String(v.key ?? '') }; } catch { return { url: '', key: '' }; }
@@ -23,8 +16,8 @@ export function getVideoEndpoint(): VideoEndpoint {
 export function setVideoEndpoint(ep: VideoEndpoint) { try { window.localStorage.setItem(VIDEO_EP, JSON.stringify({ url: ep.url.trim(), key: ep.key.trim() })); } catch { /* storage unavailable */ } }
 
 const IMAGE_EP = 'ips-image-endpoint';
-export type EngineKind = 'video' | 'image' | 'voice';
-const EP_KEY: Record<'image' | 'voice', string> = { image: IMAGE_EP, voice: 'ips-voice-endpoint' };
+export type EngineKind = 'video' | 'image';
+const EP_KEY: Record<'image', string> = { image: IMAGE_EP };
 export const getEngineEndpoint = (k: EngineKind): VideoEndpoint => {
   if (k === 'video') return getVideoEndpoint();
   try { const v = JSON.parse(window.localStorage.getItem(EP_KEY[k]) ?? '{}'); return { url: String(v.url ?? ''), key: String(v.key ?? '') }; } catch { return { url: '', key: '' }; }
@@ -42,12 +35,14 @@ export interface ConnectResult {
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const key = getAccessKey();
-  const res = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(key ? { 'x-ips-key': key } : {}), ...init?.headers }, cache: 'no-store' });
+  const res = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers }, cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(res.status === 401 ? 'Access key is missing or wrong (Settings).' : data.error ?? `Request failed (${res.status})`);
+  if (res.status === 401 && typeof window !== 'undefined') { window.location.assign('/login'); throw new Error('Session expired. Signing in again…'); }
+  if (!res.ok) throw new Error(data.error ?? data.message ?? `Request failed (${res.status})`);
   return data as T;
 }
+
+export interface VaultService { service: 'runpod' | 'voice_api'; hasKey: boolean; hint: string; endpoint: string | null; status: 'connected' | 'failed' | null; checkedAt: string | null }
 
 export interface PromptSummary { id: string; title: string; created_at: string; chars: number; preview: string }
 export interface PromptFull { id: string; title: string; content: string; created_at: string }
@@ -58,25 +53,22 @@ export const api = {
   createPrompt: (title: string, content: string) => call<{ prompt: PromptFull }>('/api/prompts', { method: 'POST', body: JSON.stringify({ title, content }) }),
   updatePrompt: (id: string, title: string, content: string) => call<{ prompt: PromptFull }>(`/api/prompts/${id}`, { method: 'PUT', body: JSON.stringify({ title, content }) }),
   deletePrompt: (id: string) => call<{ ok: boolean }>(`/api/prompts/${id}`, { method: 'DELETE' }),
-  createJob: (body: { engine: string; folder: string; masterPrompt: string; scenes: string[]; imageDataUrl?: string; voiceId?: string; options?: Record<string, unknown> }) => {
-    // Every job goes to the GPU worker saved in Command Center (Colab, RunPod, ...): video -> Video Engine, kh/en -> Voice Engine.
-    const ep = getEngineEndpoint(body.engine === 'video' ? 'video' : 'voice');
-    const endpoint = ep?.url ? { url: ep.url, ...(ep.key ? { key: ep.key } : {}) } : undefined;
-    return call<JobView>('/api/jobs', { method: 'POST', body: JSON.stringify({ ...body, ...(endpoint ? { endpoint } : {}) }) });
-  },
-  translate: (text: string, from: 'km' | 'en', to: 'km' | 'en') => {
-    const ep = getVideoEndpoint();
-    return call<{ ok: boolean; text?: string; error?: string; via?: string }>('/api/translate', { method: 'POST', body: JSON.stringify({ text, from, to, ...(ep.url ? { endpoint: { url: ep.url, ...(ep.key ? { key: ep.key } : {}) } } : {}) }) });
-  },
+  createJob: (body: { engine: string; folder: string; masterPrompt: string; scenes: string[]; imageDataUrl?: string; voiceId?: string; options?: Record<string, unknown> }) =>
+    call<JobView>('/api/jobs', { method: 'POST', body: JSON.stringify(body) }),   // the server uses the keys in your API Key Vault
+  translate: (text: string, from: 'km' | 'en', to: 'km' | 'en') =>
+    call<{ ok: boolean; text?: string; error?: string; via?: string }>('/api/translate', { method: 'POST', body: JSON.stringify({ text, from, to }) }),
+  vault: () => call<{ services: VaultService[] }>('/api/vault'),
+  saveVault: (service: VaultService['service'], key: string, endpoint: string) =>
+    call<{ ok: boolean; message: string; services: VaultService[] }>('/api/vault', { method: 'PUT', body: JSON.stringify({ service, ...(key ? { key } : {}), endpoint }) }),
+  deleteVault: (service: VaultService['service']) => call<{ services: VaultService[] }>(`/api/vault?service=${service}`, { method: 'DELETE' }),
+  /** Files finished outputs into a new Document folder and sends the push notification. */
+  fileOutputs: (kind: 'image' | 'voice' | 'video', title: string, items: { name: string; url: string }[]) =>
+    call<{ ok: boolean; folderId: string; saved: number; failed: number }>('/api/outputs', { method: 'POST', body: JSON.stringify({ kind, title, items }) }),
   connect: (ep: VideoEndpoint, mode: 'connect' | 'refresh' = 'connect') =>
     call<ConnectResult>('/api/connect', { method: 'POST', body: JSON.stringify({ url: ep.url, key: ep.key || undefined, mode }) }),
   getJob: (id: string) => call<JobView>(`/api/jobs/${id}`),
   cancelJob: (id: string) => call<JobView>(`/api/jobs/${id}`, { method: 'DELETE' }),
-  /** Continue a paused job from its first unfinished scene (sends the current GPU endpoint in case the Colab URL changed). */
-  resumeJob: (id: string) => {
-    const ep = getVideoEndpoint();
-    return call<JobView>(`/api/jobs/${id}/resume`, { method: 'POST', body: JSON.stringify(ep.url ? { endpoint: { url: ep.url, ...(ep.key ? { key: ep.key } : {}) } } : {}) });
-  },
+  resumeJob: (id: string) => call<JobView>(`/api/jobs/${id}/resume`, { method: 'POST', body: '{}' }),
   retryJob: (id: string) => call<JobView>(`/api/jobs/${id}/retry`, { method: 'POST' }),
   listJobs: () => call<{ jobs: JobView[] }>('/api/jobs'),
 };

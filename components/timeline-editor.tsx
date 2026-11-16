@@ -1,5 +1,6 @@
 'use client';
 
+import { api } from '@/lib/client/api';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Download, FolderOpen, Image as ImageIcon, Lock, Music2, Mic2, Pause, Play, RectangleHorizontal, RectangleVertical, Trash2, Type, Unlock, Upload, Wand2, X } from 'lucide-react';
 import { AutoEditor } from '@/components/auto-editor';
@@ -204,7 +205,11 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
       if (jobRef.current?.id !== job.id) return;
       try {
         const s = await renderStatus(job); setRs(s);
-        if (s.status === 'DONE') { setPhase('done'); return; }
+        if (s.status === 'DONE') {
+          setPhase('done');
+          if (s.url) void api.fileOutputs('video', 'Timeline render', [{ name: 'timeline.mp4', url: s.url }]).catch(() => undefined);   // Document folder + push
+          return;
+        }
         if (s.status === 'FAILED' || s.status === 'CANCELLED') { setPhase('error'); setErr(s.status === 'CANCELLED' ? 'Cancelled.' : s.error || 'Render failed.'); return; }
       } catch (e) { setPhase('error'); setErr(e instanceof Error ? e.message : 'Lost contact with the render server.'); return; }
     }

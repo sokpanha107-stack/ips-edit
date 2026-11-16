@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAccess } from '@/lib/backend/auth';
+import { requireUser } from '@/lib/backend/session';
 import { createJob, tick } from '@/lib/backend/engine';
 import { ProviderConfigError } from '@/lib/backend/providers';
 import { getStore } from '@/lib/backend/store';
@@ -17,12 +17,10 @@ const schema = z.object({
   imageDataUrl: z.string().max(6_000_000).startsWith('data:image/').optional(),
   voiceId: z.string().max(100).optional(),
   options: z.record(z.unknown()).optional(),
-  endpoint: z.object({ url: z.string().url().max(500), key: z.string().max(500).optional() }).optional(),
 });
 
 export async function POST(req: Request) {
-  const denied = requireAccess(req);
-  if (denied) return denied;
+  const au = await requireUser(); if ('res' in au) return au.res; const me = au.ctx;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'invalid request', details: parsed.error.flatten() }, { status: 400 });
   const secs = parsed.data.options?.sceneSeconds;
@@ -31,8 +29,8 @@ export async function POST(req: Request) {
   }
   if (parsed.data.engine === 'video' && !parsed.data.imageDataUrl) return NextResponse.json({ error: 'video jobs need a base image' }, { status: 400 });
   try {
-    const job = await createJob(parsed.data);
-    const started = (await tick(job.id)) ?? job;
+    const job = await createJob(me, parsed.data);
+    const started = (await tick(me, job.id)) ?? job;
     return NextResponse.json(toView(started), { status: 201 });
   } catch (err) {
     const status = err instanceof ProviderConfigError ? 503 : 400;
@@ -41,8 +39,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  const denied = requireAccess(req);
-  if (denied) return denied;
-  const jobs = await getStore().listJobs(50);
+  const au = await requireUser(); if ('res' in au) return au.res; const me = au.ctx;
+  const jobs = await getStore(me.db, me.userId).listJobs(50);
   return NextResponse.json({ jobs: jobs.map(toView) });
 }
