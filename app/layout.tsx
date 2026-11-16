@@ -25,5 +25,5 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const themeScript = "try{var p=JSON.parse(localStorage.getItem('ips-prefs')||'{}');var d=document.documentElement;if(p.theme==='light'||p.theme==='dark')d.dataset.theme=p.theme;if(p.eyeCare)d.classList.add('eye-care')}catch(e){}";
 
-  return <html lang="en" data-theme="system" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head><body className={inter.className}>{children}</body></html>;
+  return <html lang="en" data-theme="system" suppressHydrationWarning><head><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" /><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;700&family=Suwannaphum:wght@400;700&family=Noto+Sans+Khmer:wght@400;700&display=swap" /><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head><body className={inter.className}>{children}</body></html>;
 }

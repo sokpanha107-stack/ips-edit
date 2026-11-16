@@ -53,7 +53,8 @@ function Modal({ title, onClose, children, footer }: { title: string; onClose: (
 
 /** Speaks scene lines with the free device voice (window.speechSynthesis). One scene or a run of scenes; always cancels what was playing first. */
 function useScenePlayer(getLines: () => string[], rate: number) {
-  const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const [supported, setSupported] = useState(false);   // decided after mount so server and client HTML match
+  useEffect(() => setSupported('speechSynthesis' in window), []);
   const [now, setNow] = useState(-1);                       // scene being spoken
   const [mode, setMode] = useState<'idle' | 'all' | 'one'>('idle');
   const [times, setTimes] = useState<Record<number, number>>({});

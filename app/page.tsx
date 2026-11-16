@@ -3,15 +3,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { AudioFolderPicker, AudioReport, readAudioUrl, videoCopy, type AudioItem } from '@/components/audio-folder';
 import { ScriptPrepScreen } from '@/components/script-tools';
+import { TimelineEditor } from '@/components/timeline-editor';
 import { CommandCenter } from '@/components/command-center';
 import { useHeartbeat } from '@/lib/client/heartbeat';
 import { api, getAccessKey, imageToDataUrl, isFinished, setAccessKey, splitScenes, type JobView } from '@/lib/client/api';
 import {
-  AudioLines, Check, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
+  AudioLines, Check, Clapperboard, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
   Folder, NotebookPen, Palette, Play, Radio, Send, Settings2, ShieldCheck, Sun, Trash2, Upload, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 
-type Tab = 'script' | 'voices' | 'kh' | 'video' | 'en' | 'history';
+type Tab = 'script' | 'voices' | 'kh' | 'video' | 'en' | 'timeline' | 'history';
 type ThemeMode = 'system' | 'light' | 'dark';
 type Language = 'en' | 'kh';
 
@@ -45,6 +46,7 @@ const navItems = (t: Copy): { id: Tab; label: string; shortLabel: string; icon: 
   { id: 'kh', label: t.khEngine, shortLabel: 'KH Voice', icon: AudioLines },
   { id: 'video', label: t.videoEngine, shortLabel: 'Video', icon: Film },
   { id: 'en', label: t.enEngine, shortLabel: 'EN Voice', icon: Radio },
+  { id: 'timeline', label: 'Timeline Editor', shortLabel: 'Timeline', icon: Clapperboard },
   { id: 'history', label: t.history, shortLabel: 'History', icon: History },
 ];
 
@@ -315,7 +317,7 @@ export default function Home() {
   const sendVoice = (voice: string, target: Target) => { setAssigned((current) => ({ ...current, [target]: voice })); showNotice(`${t.sentTo} ${target === 'kh' ? t.khEngine : t.enEngine} · ${voice}`); };
   const deleteVoices = (names: string[]) => { setVoices((current) => current.filter((voice) => !names.includes(voice.name))); setAssigned((current) => ({ kh: names.includes(current.kh) ? '' : current.kh, en: names.includes(current.en) ? '' : current.en })); showNotice(t.deletedVoices); };
   const addImage = (file: File) => { setBaseImage({ url: URL.createObjectURL(file), name: file.name }); showNotice(t.imageReady); };
-  const renderScreen = () => { if (activeTab === 'script') return null; if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
+  const renderScreen = () => { if (activeTab === 'script' || activeTab === 'timeline') return null; if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
   const items = navItems(t);
 
   const sendScript = (target: 'kh' | 'en' | 'video', text: string) => updateDraft(target, { script: text, count: String(splitScenes(text).length || drafts[target].count) });
@@ -336,6 +338,7 @@ export default function Home() {
     </aside>
     <div className="workspace">{notice && <div className="notice"><Check size={16} />{notice}</div>}
       <div hidden={activeTab !== 'script'}><ScriptPrepScreen language={language} anchor={drafts.video.audio.map((a) => a.seconds)} onSend={sendScript} onNotice={showNotice} /></div>
+      <div hidden={activeTab !== 'timeline'}><TimelineEditor scripts={[{ label: 'KH', text: drafts.kh.script }, { label: 'EN', text: drafts.en.script }]} onNotice={showNotice} /></div>
       {renderScreen()}</div>
     <CommandCenter open={commandOpen} onClose={() => setCommandOpen(false)} t={t} language={language} /><SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} t={t} language={language} setLanguage={setLanguage} themeMode={themeMode} setThemeMode={setThemeMode} eyeCare={eyeCare} setEyeCare={() => setEyeCare((value) => !value)} />{splash !== 'done' && <Splash leaving={splash === 'leaving'} onSkip={() => setSplash('leaving')} t={t} />}</main>;
 }
