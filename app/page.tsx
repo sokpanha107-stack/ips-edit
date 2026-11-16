@@ -3,16 +3,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { AudioFolderPicker, AudioReport, readAudioUrl, videoCopy, type AudioItem } from '@/components/audio-folder';
 import { ScriptPrepScreen } from '@/components/script-tools';
-import { TimelineEditor } from '@/components/timeline-editor';
+import { FeatureSettings } from '@/components/feature-settings';
+import { DEFAULT_FEATURES, isOn, loadFeatures, saveFeatures, FEATURE_LABEL, type FeatureCfg, type FeatureId } from '@/lib/client/features';
+import { TimelineEditor, type TimelineHandle } from '@/components/timeline-editor';
+import { ImageEngine } from '@/components/image-engine';
 import { CommandCenter } from '@/components/command-center';
 import { useHeartbeat } from '@/lib/client/heartbeat';
 import { api, getAccessKey, imageToDataUrl, isFinished, setAccessKey, splitScenes, type JobView } from '@/lib/client/api';
 import {
-  AudioLines, Check, Clapperboard, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
+  AudioLines, Check, ChevronDown, Clapperboard, Image as ImageIcon, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
   Folder, NotebookPen, Palette, Play, Radio, Send, Settings2, ShieldCheck, Sun, Trash2, Upload, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 
-type Tab = 'script' | 'voices' | 'kh' | 'video' | 'en' | 'timeline' | 'history';
+type Tab = 'script' | 'voices' | 'kh' | 'video' | 'image' | 'en' | 'timeline' | 'history';
+const TAB_FEATURE: Partial<Record<Tab, FeatureId>> = { script: 'script', voices: 'voices', kh: 'voice', en: 'voice', video: 'video', image: 'image', history: 'history' };
 type ThemeMode = 'system' | 'light' | 'dark';
 type Language = 'en' | 'kh';
 
@@ -262,10 +266,10 @@ function AccessKeyField({ t, language }: { t: Copy; language: Language }) {
   </div>;
 }
 
-function SettingsDrawer({ open, onClose, t, language, setLanguage, themeMode, setThemeMode, eyeCare, setEyeCare }: { open: boolean; onClose: () => void; t: Copy; language: Language; setLanguage: (language: Language) => void; themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; eyeCare: boolean; setEyeCare: () => void }) {
+function SettingsDrawer({ open, onClose, t, language, setLanguage, themeMode, setThemeMode, eyeCare, setEyeCare, features, setFeatures }: { features: FeatureCfg[]; setFeatures: (f: FeatureCfg[]) => void; open: boolean; onClose: () => void; t: Copy; language: Language; setLanguage: (language: Language) => void; themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; eyeCare: boolean; setEyeCare: () => void }) {
   if (!open) return null;
   const themes: [ThemeMode, string, LucideIcon][] = [['system', t.system, Radio], ['light', t.light, Sun], ['dark', t.dark, Moon]];
-  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><h2>{t.settings}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div><div className="drawer-content"><div className="settings-block"><div className="settings-title"><Lock size={17} /><strong>{t.apiTitle}</strong></div><AccessKeyField t={t} language={language} /></div><div className="settings-block"><div className="settings-title"><Palette size={17} /><strong>{t.language}</strong></div><div className="segmented"><button type="button" className={language === 'kh' ? 'active' : ''} onClick={() => setLanguage('kh')}>ភាសាខ្មែរ</button><button type="button" className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')}>English</button></div></div><div className="settings-block"><div className="settings-title"><Sun size={17} /><strong>{t.theme}</strong></div><div className="theme-options">{themes.map(([key, label, ThemeIcon]) => <button type="button" key={key} className={themeMode === key ? 'active' : ''} onClick={() => setThemeMode(key)}><ThemeIcon size={15} />{label}</button>)}</div><div className="setting-row compact"><strong>{t.eyeCare}</strong><Toggle checked={eyeCare} onChange={setEyeCare} label={t.eyeCare} /></div></div></div><button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.save}</button></aside></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><h2>{t.settings}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div><div className="drawer-content"><div className="settings-block"><div className="settings-title"><Lock size={17} /><strong>{t.apiTitle}</strong></div><AccessKeyField t={t} language={language} /></div><div className="settings-block"><div className="settings-title"><Palette size={17} /><strong>{t.language}</strong></div><div className="segmented"><button type="button" className={language === 'kh' ? 'active' : ''} onClick={() => setLanguage('kh')}>ភាសាខ្មែរ</button><button type="button" className={language === 'en' ? 'active' : ''} onClick={() => setLanguage('en')}>English</button></div></div><div className="settings-block"><div className="settings-title"><Sun size={17} /><strong>{t.theme}</strong></div><div className="theme-options">{themes.map(([key, label, ThemeIcon]) => <button type="button" key={key} className={themeMode === key ? 'active' : ''} onClick={() => setThemeMode(key)}><ThemeIcon size={15} />{label}</button>)}</div><div className="setting-row compact"><strong>{t.eyeCare}</strong><Toggle checked={eyeCare} onChange={setEyeCare} label={t.eyeCare} /></div></div><FeatureSettings features={features} onChange={setFeatures} /></div><button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.save}</button></aside></div>;
 }
 
 export default function Home() {
@@ -274,6 +278,11 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('script');
   const [commandOpen, setCommandOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [features, setFeaturesState] = useState<FeatureCfg[]>(DEFAULT_FEATURES);
+  const [voiceMenu, setVoiceMenu] = useState(false);
+  const timelineRef = useRef<TimelineHandle>(null);
+  const setFeatures = (f: FeatureCfg[]) => { setFeaturesState(f); saveFeatures(f); };
+  useEffect(() => { setFeaturesState(loadFeatures()); const sync = (e: StorageEvent) => { if (e.key === 'ips-features') setFeaturesState(loadFeatures()); }; window.addEventListener('storage', sync); return () => window.removeEventListener('storage', sync); }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
   const [eyeCare, setEyeCare] = useState(false);
@@ -317,28 +326,46 @@ export default function Home() {
   const sendVoice = (voice: string, target: Target) => { setAssigned((current) => ({ ...current, [target]: voice })); showNotice(`${t.sentTo} ${target === 'kh' ? t.khEngine : t.enEngine} · ${voice}`); };
   const deleteVoices = (names: string[]) => { setVoices((current) => current.filter((voice) => !names.includes(voice.name))); setAssigned((current) => ({ kh: names.includes(current.kh) ? '' : current.kh, en: names.includes(current.en) ? '' : current.en })); showNotice(t.deletedVoices); };
   const addImage = (file: File) => { setBaseImage({ url: URL.createObjectURL(file), name: file.name }); showNotice(t.imageReady); };
-  const renderScreen = () => { if (activeTab === 'script' || activeTab === 'timeline') return null; if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
+  const renderScreen = () => { if (activeTab === 'script' || activeTab === 'timeline' || activeTab === 'image') return null; if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} image={baseImage} imageLocked={imageLocked} onImage={addImage} onLock={() => setImageLocked((value) => !value)} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
   const items = navItems(t);
 
   const sendScript = (target: 'kh' | 'en' | 'video', text: string) => updateDraft(target, { script: text, count: String(splitScenes(text).length || drafts[target].count) });
   const go = (id: Tab) => { setActiveTab(id); setMenuOpen(false); };
-  const sideExtra: { key: string; label: string; icon: LucideIcon; run: () => void }[] = [
-    { key: 'cc', label: t.commandCenter, icon: Gauge, run: () => { setMenuOpen(false); setCommandOpen(true); } },
-    { key: 'st', label: t.settings, icon: Settings2, run: () => { setMenuOpen(false); setSettingsOpen(true); } },
-  ];
+  const on = (id: FeatureId) => isOn(features, id);
+  const firstTab = (): Tab => { for (const f of features) { if (!f.on) continue; if (f.id === 'voice') return 'kh'; if (f.id !== 'command') return f.id as Tab; } return 'timeline'; };
+  // a tab whose feature was switched off can no longer be shown
+  useEffect(() => { const need = TAB_FEATURE[activeTab]; if (need && !isOn(features, need)) setActiveTab(firstTab()); }, [features, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeTab === 'kh' || activeTab === 'en') setVoiceMenu(true); }, [activeTab]);
+  useEffect(() => { if (!isOn(features, 'command')) setCommandOpen(false); }, [features]);
+  const tabIcon: Record<string, LucideIcon> = { script: NotebookPen, voices: Mic2, video: Film, image: ImageIcon, history: History };
+  const tabLabel: Record<string, string> = { script: 'Script Preparation', voices: t.voiceLibrary, video: t.videoEngine, image: 'Image Engine', history: t.history };
+  const tabIdx = menuOpen ? 0 : -1;
 
   return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button><h1 className="top-title">IPS Edit</h1></header>
     <div className={`side-overlay ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
     <aside className={`side-drawer ${menuOpen ? 'open' : ''}`} aria-label="Navigation" aria-hidden={!menuOpen}>
       <div className="side-head"><Brand t={t} /><button type="button" className="icon-button" onClick={() => setMenuOpen(false)} aria-label={t.close ?? 'Close'}><X size={20} /></button></div>
-      <nav className="side-nav">{items.map(({ id, label, icon: Icon }) => <button type="button" key={id} tabIndex={menuOpen ? 0 : -1} className={activeTab === id ? 'side-item active' : 'side-item'} onClick={() => go(id)}><Icon size={20} /><span>{label}</span></button>)}
+      <nav className="side-nav">{features.filter((f) => f.on).map((f) => {
+        if (f.id === 'voice') {
+          const inVoice = activeTab === 'kh' || activeTab === 'en';
+          return <div key="voice"><button type="button" tabIndex={tabIdx} className={`side-item ${voiceMenu ? 'open' : ''} ${inVoice ? 'parent-active' : ''}`} aria-expanded={voiceMenu} aria-controls="voice-sub" onClick={() => setVoiceMenu((v) => !v)}><AudioLines size={20} /><span>Voice Engine</span><ChevronDown size={18} className="chev" /></button>
+            <div id="voice-sub" className={`side-sub ${voiceMenu ? 'open' : ''}`}><div>
+              <button type="button" tabIndex={voiceMenu ? tabIdx : -1} className={activeTab === 'kh' ? 'side-item child active' : 'side-item child'} onClick={() => go('kh')}><span>KH Voice</span></button>
+              <button type="button" tabIndex={voiceMenu ? tabIdx : -1} className={activeTab === 'en' ? 'side-item child active' : 'side-item child'} onClick={() => go('en')}><span>EN Voice</span></button></div></div></div>;
+        }
+        if (f.id === 'command') return <button type="button" key="command" tabIndex={tabIdx} className="side-item" onClick={() => { setMenuOpen(false); setCommandOpen(true); }}><Gauge size={20} /><span>{t.commandCenter}</span></button>;
+        const Icon = tabIcon[f.id];
+        return <button type="button" key={f.id} tabIndex={tabIdx} className={activeTab === f.id ? 'side-item active' : 'side-item'} onClick={() => go(f.id as Tab)}><Icon size={20} /><span>{tabLabel[f.id]}</span></button>;
+      })}
+        <button type="button" tabIndex={tabIdx} className={activeTab === 'timeline' ? 'side-item active' : 'side-item'} onClick={() => go('timeline')}><Clapperboard size={20} /><span>Timeline Editor</span></button>
         <div className="side-sep" />
-        {sideExtra.map(({ key, label, icon: Icon, run }) => <button type="button" key={key} tabIndex={menuOpen ? 0 : -1} className="side-item" onClick={run}><Icon size={20} /><span>{label}</span></button>)}
+        <button type="button" tabIndex={tabIdx} className="side-item" onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}><Settings2 size={20} /><span>{t.settings}</span></button>
       </nav>
     </aside>
     <div className="workspace">{notice && <div className="notice"><Check size={16} />{notice}</div>}
       <div hidden={activeTab !== 'script'}><ScriptPrepScreen language={language} anchor={drafts.video.audio.map((a) => a.seconds)} onSend={sendScript} onNotice={showNotice} /></div>
-      <div hidden={activeTab !== 'timeline'}><TimelineEditor scripts={[{ label: 'KH', text: drafts.kh.script }, { label: 'EN', text: drafts.en.script }]} onNotice={showNotice} /></div>
+      <div hidden={activeTab !== 'timeline'}><TimelineEditor ref={timelineRef} scripts={[{ label: 'KH', text: drafts.kh.script }, { label: 'EN', text: drafts.en.script }]} onNotice={showNotice} /></div>
+      <div hidden={activeTab !== 'image'}>{on('image') && <ImageEngine language={language} onImages={(files) => timelineRef.current?.addImages(files)} onNotice={showNotice} />}</div>
       {renderScreen()}</div>
-    <CommandCenter open={commandOpen} onClose={() => setCommandOpen(false)} t={t} language={language} /><SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} t={t} language={language} setLanguage={setLanguage} themeMode={themeMode} setThemeMode={setThemeMode} eyeCare={eyeCare} setEyeCare={() => setEyeCare((value) => !value)} />{splash !== 'done' && <Splash leaving={splash === 'leaving'} onSkip={() => setSplash('leaving')} t={t} />}</main>;
+    <CommandCenter open={commandOpen && on('command')} onClose={() => setCommandOpen(false)} t={t} language={language} show={{ voice: on('voice'), video: on('video'), image: on('image') }} /><SettingsDrawer features={features} setFeatures={setFeatures} open={settingsOpen} onClose={() => setSettingsOpen(false)} t={t} language={language} setLanguage={setLanguage} themeMode={themeMode} setThemeMode={setThemeMode} eyeCare={eyeCare} setEyeCare={() => setEyeCare((value) => !value)} />{splash !== 'done' && <Splash leaving={splash === 'leaving'} onSkip={() => setSplash('leaving')} t={t} />}</main>;
 }

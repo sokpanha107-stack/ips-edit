@@ -27,6 +27,7 @@ FONT_URLS = {   # best-effort downloads of the premium Khmer fonts (Google Fonts
 }
 FALLBACK_FONTS = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf']
 
+TRANS = {'cut': None, 'fade': 'fade', 'dissolve': 'dissolve', 'fadeblack': 'fadeblack', 'wipe_left': 'wipeleft', 'wipe_right': 'wiperight', 'slide_left': 'slideleft', 'slide_right': 'slideright', 'zoom': 'zoomin'}
 JOBS: dict = {}
 Q: 'queue.Queue[str]' = queue.Queue()
 
@@ -296,8 +297,8 @@ def cover_crop(iw, ih, W, H, cx, cy):
     return x, y, cw, ch
 
 
-def make_segment(job, i, v, src: Path, W, H, fps, reframe, master, workdir, base, span):
-    dur = max(0.2, float(v['duration']))
+def make_segment(job, i, v, src: Path, W, H, fps, reframe, master, workdir, base, span, dur=None):
+    dur = max(0.2, float(dur if dur is not None else v['duration']))
     out = workdir / f'seg_{i:03d}.mp4'
     enc = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p', '-r', str(fps), '-an']
     iw, ih, img = media_size(src, v['kind'])
@@ -361,15 +362,50 @@ def render_job(jid: str):
         if not vis: raise RuntimeError('Timeline has no visual clips')
         total = sum(max(0.2, float(v['duration'])) for v in vis)
         job['stage'] = 'Preparing clips'
+        # transitions: a scene that enters with an xfade is rendered `td` seconds longer, and the overlap is placed so every scene still ends on time
+        durs = [max(0.2, float(v['duration'])) for v in vis]
+        tds = []
+        for i, v in enumerate(vis):
+            name = TRANS.get(str(v.get('transition') or 'cut')) if i > 0 else None
+            td = min(float(v.get('transitionDur') or 0.5), 0.45 * durs[i], 0.45 * durs[i - 1]) if name and i > 0 else 0.0
+            tds.append(td if td >= 0.05 else 0.0)
+        starts = [sum(durs[:i]) for i in range(len(vis))]
         segs, acc = [], 0.0
         for i, v in enumerate(vis):
-            d = max(0.2, float(v['duration']))
             job['stage'] = f'Clip {i + 1}/{len(vis)}'
-            segs.append(make_segment(job, i, v, job['files'][v['file']], W, H, fps, bool(P.get('reframe')), P.get('masterPrompt', ''), wd, 60 * acc / total, 60 * d / total))
-            acc += d
-        (wd / 'list.txt').write_text(''.join(f"file '{s.name}'\n" for s in segs))
-        job['stage'] = 'Joining clips'
-        run(['ffmpeg', '-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'joined.mp4'], cwd=wd)
+            segs.append(make_segment(job, i, v, job['files'][v['file']], W, H, fps, bool(P.get('reframe')), P.get('masterPrompt', ''), wd, 60 * acc / total, 60 * durs[i] / total, dur=durs[i] + tds[i]))
+            acc += durs[i]
+        # cut-only stretches are joined without re-encoding, then the stretches are cross-faded
+        runs = []   # (file, nominal start of its first scene, transition into it)
+        cur = []
+        for i, seg in enumerate(segs):
+            if i == 0 or tds[i] > 0:
+                if cur: runs.append(cur)
+                cur = [i]
+            else: cur.append(i)
+        runs.append(cur)
+        run_files = []
+        for k, idxs in enumerate(runs):
+            if len(idxs) == 1: run_files.append(segs[idxs[0]]); continue
+            (wd / f'run{k}.txt').write_text(''.join(f"file '{segs[j].name}'\n" for j in idxs))
+            job['stage'] = 'Joining clips'
+            run(['ffmpeg', '-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', f'run{k}.txt', '-c', 'copy', f'run{k}.mp4'], cwd=wd)
+            run_files.append(wd / f'run{k}.mp4')
+        if len(run_files) == 1:
+            shutil.copy(run_files[0], wd / 'joined.mp4')
+        else:
+            job['stage'] = 'Cross-fading scenes'
+            ins, fcg = [], []
+            for k, f in enumerate(run_files):
+                ins += ['-i', str(f)]
+                fcg.append(f'[{k}:v]settb=AVTB,setpts=PTS-STARTPTS,fps={fps},format=yuv420p[r{k}]')
+            prev = 'r0'
+            for k in range(1, len(runs)):
+                i = runs[k][0]
+                fcg.append(f"[{prev}][r{k}]xfade=transition={TRANS[str(vis[i].get('transition'))]}:duration={tds[i]:.3f}:offset={max(0.0, starts[i] - tds[i]):.3f}[x{k}]")
+                prev = f'x{k}'
+            run(['ffmpeg', '-y', '-v', 'error', *ins, '-filter_complex', ';'.join(fcg), '-map', f'[{prev}]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', str(fps), '-an',
+                 '-t', f'{total:.3f}', '-progress', 'pipe:1', '-nostats', 'joined.mp4'], cwd=wd, job=job, total=total, base=55, span=5)
 
         # captions -> .ass
         cap = P.get('caption') or {}

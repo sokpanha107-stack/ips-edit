@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Eye, EyeOff, Gauge, Mic2, Plug, Film, X } from 'lucide-react';
-import { api, getVideoEndpoint, getVoiceKey, setVideoEndpoint, setVoiceKey, type ConnectResult, type HardwareInfo } from '@/lib/client/api';
+import { Check, Eye, EyeOff, Gauge, Image as ImageIcon, Mic2, Plug, Film, X } from 'lucide-react';
+import { api, getEngineEndpoint, getVoiceKey, setEngineEndpoint, setVoiceKey, type EngineKind, type ConnectResult, type HardwareInfo } from '@/lib/client/api';
 
 interface Labels { commandCenter: string; close: string; done: string; performance: string; vram: string; storage: string; activeTasks: string }
 
@@ -12,6 +12,7 @@ const copy = {
     video: 'Video Engine', videoHelp: 'Any GPU worker: Google Colab, RunPod, or your own server. RunPod: https://api.runpod.ai/v2/<endpoint id>',
     urlPh: 'API URL (https://…)', keyPh: 'API key (optional for Colab)', connect: 'Connect', connecting: 'Connecting…', connected: 'Connected',
     notConnected: 'Not connected', gpu: 'GPU', model: 'AI model', workers: 'Workers', used: 'used', refreshed: 'Updated',
+    image: 'Image Engine', imageHelp: 'GPU worker that makes images from your Signature Image (Colab or your own server). It can be the same URL as the Video Engine.',
     needUrl: 'Enter the API URL first.', live: 'Live hardware from your worker',
   },
   kh: {
@@ -19,6 +20,7 @@ const copy = {
     video: 'Video Engine', videoHelp: 'ម៉ាស៊ីន GPU ណាក៏បាន៖ Google Colab, RunPod ឬ server ផ្ទាល់ខ្លួន។ RunPod៖ https://api.runpod.ai/v2/<endpoint id>',
     urlPh: 'API URL (https://…)', keyPh: 'API key (Colab អាចទទេ)', connect: 'Connect', connecting: 'កំពុងភ្ជាប់…', connected: 'ភ្ជាប់បាន',
     notConnected: 'មិនទាន់ភ្ជាប់', gpu: 'GPU', model: 'AI model', workers: 'Workers', used: 'កំពុងប្រើ', refreshed: 'ធ្វើបច្ចុប្បន្នភាព',
+    image: 'Image Engine', imageHelp: 'ម៉ាស៊ីន GPU ដែលបង្កើតរូបពី Signature Image (Colab ឬ server ផ្ទាល់ខ្លួន)។ អាចប្រើ URL ដូច Video Engine។',
     needUrl: 'សូមដាក់ API URL សិន។', live: 'Hardware ផ្ទាល់ពីម៉ាស៊ីនរបស់អ្នក',
   },
 } as const;
@@ -35,28 +37,25 @@ function SecretInput({ value, onChange, placeholder, label }: { value: string; o
   </div>;
 }
 
-export function CommandCenter({ open, onClose, t, language }: { open: boolean; onClose: () => void; t: Labels; language: 'en' | 'kh' }) {
-  const c = copy[language];
-  const [voiceKey, setVoice] = useState('');
-  const [savedFlash, setSavedFlash] = useState(false);
-  const [url, setUrl] = useState('');
-  const [key, setKey] = useState('');
+function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t: Labels; c: (typeof copy)['en'] | (typeof copy)['kh'] }) {
+  const Icon = kind === 'image' ? ImageIcon : Film;
   const [status, setStatus] = useState<Status>({ kind: 'idle', text: '' });
   const [hw, setHw] = useState<HardwareInfo | null>(null);
+  const [url, setUrl] = useState('');
+  const [key, setKey] = useState('');
   const [workers, setWorkers] = useState<ConnectResult['workers']>();
   const [tasks, setTasks] = useState(0);
   const [updated, setUpdated] = useState('');
   const connectedRef = useRef(false);
-  const flashTimer = useRef<number | undefined>(undefined);
-
+  
   useEffect(() => {
     if (!open) return;
-    setVoice(getVoiceKey());
-    const ep = getVideoEndpoint();
+    const ep = getEngineEndpoint(kind);
     setUrl(ep.url); setKey(ep.key);
-  }, [open]);
+  }, [open, kind]);
 
   const countTasks = useCallback(async () => {
+    if (kind !== 'video') return;
     try {
       const { jobs } = await api.listJobs();
       setTasks(jobs.filter((j) => j.status === 'queued' || j.status === 'running').reduce((n, j) => n + Math.max(0, j.progress.total - j.progress.done - j.progress.failed), 0));
@@ -84,48 +83,37 @@ export function CommandCenter({ open, onClose, t, language }: { open: boolean; o
   useEffect(() => {
     if (!open) return;
     void countTasks();
-    const ep = getVideoEndpoint();
+    const ep = getEngineEndpoint(kind);
     if (ep.url) void run('refresh', ep);
     const id = window.setInterval(() => {
       void countTasks();
-      const cur = getVideoEndpoint();
+      const cur = getEngineEndpoint(kind);
       if (cur.url && connectedRef.current) void run('refresh', cur);
     }, 5000);
     return () => window.clearInterval(id);
-  }, [open, run, countTasks]);
+  }, [open, run, countTasks, kind]);
 
   if (!open) return null;
 
-  const onVoice = (v: string) => {
-    setVoice(v); setVoiceKey(v); setSavedFlash(true);
-    window.clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => setSavedFlash(false), 1200);
-  };
+
+  if (!open) return null;
   const connect = () => {
     if (!url.trim()) { setStatus({ kind: 'bad', text: c.needUrl }); return; }
     const ep = { url: url.trim(), key: key.trim() };
-    setVideoEndpoint(ep);
+    setEngineEndpoint(kind, ep);
     void run('connect', ep);
   };
   const vramPct = pct(hw?.vramUsedGb, hw?.vramTotalGb);
   const diskPct = pct(hw?.diskUsedGb, hw?.diskTotalGb);
 
-  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="drawer-header"><h2>{t.commandCenter}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div>
-    <div className="drawer-content">
-      <section className="cc-block">
-        <div className="cc-title"><Mic2 size={15} /><strong>{c.voice}</strong>{savedFlash && <span className="cc-saved"><Check size={12} /> {c.saved}</span>}</div>
-        <SecretInput value={voiceKey} onChange={onVoice} placeholder={c.voicePh} label={c.voice} />
-        <p className="access-help">{c.voiceHelp}</p>
-      </section>
-
+  return <>
       <section className="cc-block cc-video">
-        <div className="cc-title"><Film size={15} /><strong>{c.video}</strong>
+        <div className="cc-title"><Icon size={15} /><strong>{kind === 'image' ? c.image : c.video}</strong>
           <span className={`cc-dot ${status.kind === 'ok' ? 'on' : status.kind === 'testing' ? 'wait' : ''}`} />
         </div>
         <input className="studio-input" type="url" inputMode="url" aria-label="API URL" placeholder={c.urlPh} value={url} autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={(e) => { setUrl(e.target.value); connectedRef.current = false; setStatus({ kind: 'idle', text: '' }); }} />
         <SecretInput value={key} onChange={(v) => { setKey(v); connectedRef.current = false; }} placeholder={c.keyPh} label="API key" />
-        <p className="access-help">{c.videoHelp}</p>
+        <p className="access-help">{kind === 'image' ? c.imageHelp : c.videoHelp}</p>
         <button type="button" className="access-test" onClick={connect} disabled={status.kind === 'testing'}><Plug size={14} /> {status.kind === 'testing' ? c.connecting : c.connect}</button>
         {status.kind !== 'idle' && <div className={`access-status ${status.kind}`}>{status.text}</div>}
 
@@ -136,10 +124,37 @@ export function CommandCenter({ open, onClose, t, language }: { open: boolean; o
             <article><span>{hw?.gpu ?? c.gpu}</span><strong>{gbText(hw?.vramTotalGb)}</strong><small>{t.vram}{hw?.vramUsedGb !== undefined ? ` · ${gbText(hw.vramUsedGb)} ${c.used}` : ''}</small><div className="usage-bar"><i style={{ width: `${vramPct}%` }} /></div></article>
             <article><span>{t.storage}</span><strong>{gbText(hw?.diskTotalGb)}</strong><small>{hw?.diskUsedGb !== undefined ? `${gbText(hw.diskUsedGb)} ${c.used}` : t.storage}</small><div className="usage-bar"><i style={{ width: `${diskPct}%` }} /></div></article>
             <article><span>{c.model}</span><strong className="cc-model">{hw?.model ?? '—'}</strong>{workers && <small>{c.workers}: {workers.ready} ready · {workers.running} running</small>}</article>
-            <article><span>{t.activeTasks}</span><strong>{String(tasks).padStart(2, '0')}</strong><div className="task-pips">{[0, 1, 2].map((i) => <i key={i} style={{ opacity: tasks > i ? 1 : 0.25 }} />)}</div></article>
+            <article><span>{t.activeTasks}</span><strong>{String(kind === 'video' ? tasks : hw?.activeTasks ?? 0).padStart(2, '0')}</strong><div className="task-pips">{[0, 1, 2].map((i) => <i key={i} style={{ opacity: (kind === 'video' ? tasks : hw?.activeTasks ?? 0) > i ? 1 : 0.25 }} />)}</div></article>
           </div>
         </div>
       </section>
+  </>;
+}
+
+export function CommandCenter({ open, onClose, t, language, show }: { open: boolean; onClose: () => void; t: Labels; language: 'en' | 'kh'; show: { voice: boolean; video: boolean; image: boolean } }) {
+  const c = copy[language];
+  const [voiceKey, setVoice] = useState('');
+  const [savedFlash, setSavedFlash] = useState(false);
+  const flashTimer = useRef<number | undefined>(undefined);
+  useEffect(() => { if (open) setVoice(getVoiceKey()); }, [open]);
+  if (!open) return null;
+  const onVoice = (v: string) => {
+    setVoice(v); setVoiceKey(v); setSavedFlash(true);
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setSavedFlash(false), 1200);
+  };
+  const none = !show.voice && !show.video && !show.image;
+  return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="drawer-header"><h2>{t.commandCenter}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div>
+    <div className="drawer-content">
+      {none && <p className="access-help">Every engine is switched off in Settings → Menu &amp; features.</p>}
+      {show.voice && <section className="cc-block">
+        <div className="cc-title"><Mic2 size={15} /><strong>{c.voice}</strong>{savedFlash && <span className="cc-saved"><Check size={12} /> {c.saved}</span>}</div>
+        <SecretInput value={voiceKey} onChange={onVoice} placeholder={c.voicePh} label={c.voice} />
+        <p className="access-help">{c.voiceHelp}</p>
+      </section>}
+      {show.video && <EnginePanel kind="video" open={open} t={t} c={c} />}
+      {show.image && <EnginePanel kind="image" open={open} t={t} c={c} />}
     </div>
     <button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.done}</button>
   </aside></div>;

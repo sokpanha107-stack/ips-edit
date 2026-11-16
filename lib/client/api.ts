@@ -22,6 +22,18 @@ export function getVideoEndpoint(): VideoEndpoint {
 }
 export function setVideoEndpoint(ep: VideoEndpoint) { try { window.localStorage.setItem(VIDEO_EP, JSON.stringify({ url: ep.url.trim(), key: ep.key.trim() })); } catch { /* storage unavailable */ } }
 
+const IMAGE_EP = 'ips-image-endpoint';
+export type EngineKind = 'video' | 'image';
+export const getEngineEndpoint = (k: EngineKind): VideoEndpoint => {
+  if (k === 'video') return getVideoEndpoint();
+  try { const v = JSON.parse(window.localStorage.getItem(IMAGE_EP) ?? '{}'); return { url: String(v.url ?? ''), key: String(v.key ?? '') }; } catch { return { url: '', key: '' }; }
+};
+export const setEngineEndpoint = (k: EngineKind, ep: VideoEndpoint) => {
+  if (k === 'video') return setVideoEndpoint(ep);
+  try { window.localStorage.setItem(IMAGE_EP, JSON.stringify({ url: ep.url.trim(), key: ep.key.trim() })); } catch { /* storage unavailable */ }
+};
+export const getImageEndpoint = () => getEngineEndpoint('image');
+
 export interface HardwareInfo { gpu: string; vramTotalGb?: number; vramUsedGb?: number; diskTotalGb?: number; diskUsedGb?: number; model?: string; activeTasks?: number }
 export interface ConnectResult {
   ok: boolean; error?: string; note?: string; kind?: 'runpod' | 'http';

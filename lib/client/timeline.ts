@@ -1,9 +1,10 @@
 /** Pure logic for the Timeline Editor: media import, timeline math, caption words, export payload and upload. */
 import { getVideoEndpoint } from './api';
+import { audioDuration } from './autoEdit';
 
 export type AssetKind = 'visual' | 'voice' | 'music';
 export interface Asset { id: string; kind: AssetKind; type: 'image' | 'video' | 'audio'; file: File; url: string; name: string; duration: number; focus?: { x: number; y: number; ar: number } }
-export interface VClip { id: string; assetId: string; duration: number; prompt: string }
+export interface VClip { id: string; assetId: string; duration: number; prompt: string; transition?: string; transitionDur?: number }
 export interface AClip { id: string; assetId: string }
 export interface Sub { id: string; text: string }
 
@@ -92,7 +93,7 @@ export async function toAssets(files: File[], zone: AssetKind): Promise<{ assets
     const type = zone === 'visual' ? (isImg ? 'image' : isVid ? 'video' : null) : isAud ? 'audio' : null;
     if (!type) { skipped += 1; continue; }
     const url = URL.createObjectURL(file);
-    const duration = type === 'image' ? 5 : await mediaDuration(url, type === 'video' ? 'video' : 'audio');
+    const duration = type === 'image' ? 5 : type === 'audio' ? await audioDuration(file, url) : await mediaDuration(url, 'video');
     assets.push({ id: uid(), kind: zone, type, file, url, name: file.name, duration: Math.round(duration * 100) / 100, ...(type === 'image' ? { focus: await estimateSubject(url) } : {}) });
   }
   return { assets, skipped };
@@ -138,7 +139,7 @@ export function buildPayload(s: TimelineState) {
   const key = (prefix: string, id: string, file: File) => { if (!keyOf.has(id)) { const k = `${prefix}${keyOf.size}`; keyOf.set(id, k); files[k] = file; } return keyOf.get(id)!; };
   const payload = {
     canvas: canvasFor(s.portrait, s.hd), reframe: s.reframe, masterPrompt: s.masterPrompt.trim(),
-    visuals: lay.visuals.map((c) => ({ file: key('v', c.assetId, asset(c.assetId).file), kind: asset(c.assetId).type, duration: c.duration, prompt: c.prompt.trim() })),
+    visuals: lay.visuals.map((c) => ({ file: key('v', c.assetId, asset(c.assetId).file), kind: asset(c.assetId).type, duration: c.duration, prompt: c.prompt.trim(), transition: c.transition ?? 'cut', transitionDur: c.transitionDur ?? 0.5 })),
     voices: lay.voices.map((c) => ({ file: key('a', c.assetId, asset(c.assetId).file), start: c.start, duration: c.duration })),
     music: s.musicId ? { file: key('m', s.musicId, asset(s.musicId).file), volume: s.musicVolume } : null,
     subtitles: lay.subs.map((c) => ({ start: c.start, end: c.end, text: c.text, words: tokenize(c.text) })),

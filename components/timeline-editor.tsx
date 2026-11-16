@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Download, FolderOpen, Image as ImageIcon, Lock, Music2, Mic2, Pause, Play, RectangleHorizontal, RectangleVertical, Trash2, Type, Unlock, Upload, Wand2, X } from 'lucide-react';
+import { AutoEditor } from '@/components/auto-editor';
+import { TRANSITIONS } from '@/lib/client/autoEdit';
 import {
   BUILT_IN_FONTS, buildPayload, cancelRender, canvasFor, defaultCaption, fmtTime, layout, readDropped, renderStatus, startRender, toAssets, tokenize, uid,
   type AClip, type Asset, type AssetKind, type CaptionStyle, type RenderStatus, type Sub, type VClip,
@@ -51,7 +53,9 @@ function previewWords(text: string, start: number, end: number, t: number) {
   return spans.map((s) => ({ ...s, state: t >= s.b ? 'past' : t >= s.a ? 'now' : 'next' }));
 }
 
-export function TimelineEditor({ scripts, onNotice }: { scripts: { label: string; text: string }[]; onNotice: (m: string) => void }) {
+export interface TimelineHandle { addImages: (files: File[]) => Promise<void> }
+
+export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: string; text: string }[]; onNotice: (m: string) => void }>(function TimelineEditor({ scripts, onNotice }, ref) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [visuals, setVisuals] = useState<VClip[]>([]);
   const [voices, setVoices] = useState<AClip[]>([]);
@@ -102,6 +106,8 @@ export function TimelineEditor({ scripts, onNotice }: { scripts: { label: string
     if (kind === 'music') setMusicId((cur) => cur ?? made[0].id);
     onNotice(`${made.length} added${skipped ? ` · ${skipped} skipped` : ''}`);
   };
+  const addFilesRef = useRef(addFiles); addFilesRef.current = addFiles;
+  useImperativeHandle(ref, () => ({ addImages: (files: File[]) => addFilesRef.current('visual', files) }), []);
   const removeAsset = (id: string) => {
     setAssets((a) => a.filter((x) => x.id !== id)); setVisuals((v) => v.filter((c) => c.assetId !== id)); setVoices((v) => v.filter((c) => c.assetId !== id));
     setMusicId((m) => (m === id ? null : m)); setSel(null);
@@ -241,6 +247,8 @@ export function TimelineEditor({ scripts, onNotice }: { scripts: { label: string
       <Zone title="Music / SFX" hint="background audio" icon={Music2} kind="music" accept="audio/*" assets={assets} onFiles={addFiles} onRemove={removeAsset} />
     </div>
 
+    <AutoEditor assets={assets} onNotice={onNotice} onAssemble={(a) => { setVisuals(a.visuals); setVoices(a.voices); setSel(null); setT(0); setPlaying(false); }} />
+
     {/* 2 · preview + properties */}
     <div className="tl-main">
       <div className="tl-preview-col">
@@ -284,6 +292,8 @@ export function TimelineEditor({ scripts, onNotice }: { scripts: { label: string
             <div className="tl-dur"><input className="studio-input" inputMode="decimal" value={durInput} onChange={(e) => setDurInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') apply(); }} aria-label="Duration in seconds" /><span>sec</span>
               <button type="button" className="primary-button" onClick={apply}>Save</button></div>
             {vd !== undefined && <button type="button" className="text-button" onClick={() => { setVisualDuration(selVisual.id, vd); setDurInput(String(vd)); }}>Match voice length ({vd.toFixed(2)}s)</button>}
+            {selVisualIdx > 0 && <><label className="field-label">Transition in <span>how this scene enters</span></label>
+              <select className="studio-input" value={selVisual.transition ?? 'cut'} onChange={(e) => setVisuals((v) => v.map((c) => (c.id === selVisual.id ? { ...c, transition: e.target.value } : c)))}>{TRANSITIONS.map((x) => <option key={x}>{x}</option>)}</select></>}
             {a?.type === 'image' ? <>
               <label className="field-label">Animation prompt <span>overrides the master prompt</span></label>
               <textarea className="studio-input" rows={2} value={selVisual.prompt} placeholder='e.g. "Pan left" · "zoom out slowly" · "static"' onChange={(e) => setVisuals((v) => v.map((c) => (c.id === selVisual.id ? { ...c, prompt: e.target.value } : c)))} />
@@ -314,7 +324,7 @@ export function TimelineEditor({ scripts, onNotice }: { scripts: { label: string
         </div>
         <div className="tl-playhead" style={{ left: 78 + Math.min(t, total) * px }} />
         {([
-          ['visual', 'Visuals', lay.visuals.map((c) => ({ id: c.id, w: c.duration, label: assetOf(c.assetId)?.name ?? '', sub: `${c.duration.toFixed(1)}s`, thumb: assetOf(c.assetId), trim: c as VClip }))],
+          ['visual', 'Visuals', lay.visuals.map((c) => ({ id: c.id, w: c.duration, label: assetOf(c.assetId)?.name ?? '', sub: `${c.duration.toFixed(1)}s${(c as VClip).transition && (c as VClip).transition !== 'cut' ? ` ⇢${(c as VClip).transition}` : ''}`, thumb: assetOf(c.assetId), trim: c as VClip }))],
           ['voice', 'Voiceover', lay.voices.map((c) => ({ id: c.id, w: c.duration, label: assetOf(c.assetId)?.name ?? '', sub: `${c.duration.toFixed(1)}s`, thumb: undefined, trim: undefined }))],
           ['music', 'Background', musicId ? [{ id: musicId, w: Math.max(total, 1), label: assetOf(musicId)?.name ?? '', sub: 'loops', thumb: undefined, trim: undefined }] : []],
           ['sub', 'Subtitles', lay.subs.map((c) => ({ id: c.id, w: c.end - c.start, label: c.text, sub: '', thumb: undefined, trim: undefined }))],
@@ -384,4 +394,4 @@ export function TimelineEditor({ scripts, onNotice }: { scripts: { label: string
     </div>
     <audio ref={voiceEl} hidden /><audio ref={musicEl} hidden />
   </section>;
-}
+});
