@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Fingerprint, Loader2, Mail, ShieldCheck } from 'lucide-react';
+import { Fingerprint, Loader2, Mail } from 'lucide-react';
 import { browserClient } from '@/lib/supabase/browser';
 import { supabaseConfigured } from '@/lib/supabase/env';
 
@@ -47,10 +47,9 @@ function LoginCard() {
   return (
     <div className="w-full max-w-md">
       <div className="mb-8 flex flex-col items-center text-center">
-        <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/40 shadow-[0_0_40px_rgba(245,158,11,.25)]"><ShieldCheck size={28} /></div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-amber-400/80">Control Center</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-50">IPS Edit</h1>
-        <p className="mt-2 text-sm text-zinc-400">Private workspace. Sign in to continue.</p>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icon-192.png" alt="IPS Edit" width={80} height={80} className="mb-5 h-20 w-20 rounded-[22px] shadow-[0_0_40px_rgba(245,158,11,.25)] ring-1 ring-amber-500/30" />
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-50">Log in</h1>
       </div>
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 shadow-2xl shadow-black/50 backdrop-blur">
@@ -72,7 +71,7 @@ function LoginCard() {
         </form>
         {msg && <p className={`mt-4 rounded-lg border p-3 text-xs ${msg.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>{msg.text}</p>}
       </div>
-      <p className="mt-6 text-center text-xs text-zinc-600">No passwords. Your data is isolated to your account.</p>
+      <p className="mt-6 text-center text-xs text-zinc-600">Thank you for choosing IPS Edit. Please log in to continue. Your work stays private and safe in your own account.</p>
     </div>
   );
 }
