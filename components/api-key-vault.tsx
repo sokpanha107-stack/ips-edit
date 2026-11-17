@@ -65,7 +65,8 @@ function Card({ s, onChange }: { s: VaultService; onChange: (v: VaultService[]) 
   </section>;
 }
 
-export function ApiKeyVault({ services, onChange }: { services: VaultService[] | null; onChange: (v: VaultService[]) => void }) {
+export function ApiKeyVault({ services, error, onChange }: { services: VaultService[] | null; error?: string; onChange: (v: VaultService[]) => void }) {
   if (!services) return <p className="text-xs text-zinc-500">Loading vault…</p>;
+  if (error || services.length === 0) return <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-xs leading-relaxed text-red-200"><p className="font-semibold">Vault is not ready</p><p className="mt-1 break-words">{error || 'No response from the server.'}</p><p className="mt-2 text-red-300/80">Check: (1) supabase/schema.sql was run in the Supabase SQL Editor, (2) VAULT_ENCRYPTION_KEY is set in Vercel, (3) the app was redeployed after adding env vars.</p></div>;
   return <div className="space-y-3">{services.map((s) => <Card key={s.service} s={s} onChange={onChange} />)}</div>;
 }
