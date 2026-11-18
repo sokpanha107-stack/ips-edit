@@ -328,10 +328,10 @@ export default function Home() {
   useEffect(() => { if (activeTab === 'kh' || activeTab === 'en') setVoiceMenu(true); }, [activeTab]);
   useEffect(() => { if (!isOn(features, 'command')) setCommandOpen(false); }, [features]);
   const tabIcon: Record<string, LucideIcon> = { script: NotebookPen, prompts: Library, documents: Cloud, voices: Mic2, video: Film, image: ImageIcon, history: History };
-  const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: t.voiceLibrary, video: t.videoEngine, image: 'Image Engine', history: t.history };
+  const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: t.voiceLibrary, video: t.videoEngine, kh: t.khEngine, en: t.enEngine, timeline: 'Timeline Editor', image: 'Image Engine', history: t.history };
   const tabIdx = menuOpen ? 0 : -1;
 
-  return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button><h1 className="top-title">IPS Edit</h1></header>
+  return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button><h1 className="top-title">{tabLabel[activeTab] ?? ''}</h1></header>
     <div className={`side-overlay ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
     <aside className={`side-drawer ${menuOpen ? 'open' : ''}`} aria-label="Navigation" aria-hidden={!menuOpen}>
       <div className="side-head"><Brand t={t} /><button type="button" className="icon-button" onClick={() => setMenuOpen(false)} aria-label={t.close ?? 'Close'}><X size={20} /></button></div>
@@ -356,7 +356,7 @@ export default function Home() {
       <div hidden={activeTab !== 'script'}><ScriptPrepScreen language={language} anchor={drafts.video.audio.map((a) => a.seconds)} onSend={sendScript} onNotice={showNotice} /></div>
       <div hidden={activeTab !== 'timeline'}><TimelineEditor ref={timelineRef} scripts={[{ label: 'KH', text: drafts.kh.script }, { label: 'EN', text: drafts.en.script }]} onNotice={showNotice} /></div>
       <div hidden={activeTab !== 'prompts'}>{on('prompts') && <PromptLibrary active={activeTab === 'prompts'} onNotice={showNotice} />}</div>
-      <div hidden={activeTab !== 'documents'}>{on('documents') && <DocumentManager active={activeTab === 'documents'} onNotice={showNotice} />}</div>
+      <div hidden={activeTab !== 'documents'}>{on('documents') && <DocumentManager active={activeTab === 'documents'} onNotice={showNotice} onSendToTimeline={async (files) => { await timelineRef.current?.addMixed(files); setActiveTab('timeline'); }} />}</div>
       <div hidden={activeTab !== 'image'}>{on('image') && <ImageEngine language={language} onImages={(files) => timelineRef.current?.addImages(files)} onNotice={showNotice} />}</div>
       {renderScreen()}</div>
     <CommandCenter open={commandOpen && on('command')} onClose={() => setCommandOpen(false)} t={t} language={language} show={{ voice: on('voice'), video: on('video'), image: on('image') }} /><SettingsDrawer vault={vault} vaultError={vaultError} setVault={setVault} features={features} setFeatures={setFeatures} open={settingsOpen} onClose={() => setSettingsOpen(false)} t={t} language={language} setLanguage={setLanguage} themeMode={themeMode} setThemeMode={setThemeMode} eyeCare={eyeCare} setEyeCare={() => setEyeCare((value) => !value)} />{splash !== 'done' && <Splash leaving={splash === 'leaving'} onSkip={() => setSplash('leaving')} t={t} />}</main>;

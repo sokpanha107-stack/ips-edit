@@ -32,20 +32,20 @@ export function AccountPanel() {
     window.location.assign('/login');
   };
 
-  return <div className="space-y-3 text-zinc-100">
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Signed in as</p>
+  return <div className="space-y-3 text-[var(--ink)]">
+    <section className="rounded-xl border border-[var(--line)] bg-[var(--card)] p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">Signed in as</p>
       <p className="mt-1 break-all text-sm">{email || '…'}</p>
       <div className="mt-3 grid gap-2">
-        <button type="button" onClick={addPasskey} disabled={!!busy} className="flex items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-60">
+        <button type="button" onClick={addPasskey} disabled={!!busy} className="flex items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm font-semibold text-[var(--amber-deep)] hover:bg-amber-500/20 disabled:opacity-60">
           {busy === 'pk' ? <Loader2 size={15} className="animate-spin" /> : <Fingerprint size={15} />} Add a passkey on this device
         </button>
-        <button type="button" onClick={signOut} disabled={!!busy} className="flex items-center justify-center gap-2 rounded-lg border border-zinc-800 px-3 py-2.5 text-sm text-zinc-300 hover:border-red-500/50 hover:text-red-300 disabled:opacity-60">
+        <button type="button" onClick={signOut} disabled={!!busy} className="flex items-center justify-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2.5 text-sm text-[var(--ink)] hover:border-red-500/50 hover:text-red-700 disabled:opacity-60">
           {busy === 'out' ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />} Sign out
         </button>
       </div>
-      {msg && <p className={`mt-2 text-xs ${msg.ok ? 'text-emerald-300' : 'text-red-300'}`}>{msg.text}</p>}
+      {msg && <p className={`mt-2 text-xs ${msg.ok ? 'text-emerald-700' : 'text-red-700'}`}>{msg.text}</p>}
     </section>
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4"><p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Notifications</p><PushToggle /></section>
+    <section className="rounded-xl border border-[var(--line)] bg-[var(--card)] p-4"><p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">Notifications</p><PushToggle /></section>
   </div>;
 }

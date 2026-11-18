@@ -49,12 +49,12 @@ export function PushToggle() {
     setBusy(false);
   };
 
-  if (!supported) return <p className="text-xs text-zinc-500">This browser cannot receive push notifications. On iPhone: Share → Add to Home Screen, then open the app from the Home Screen.</p>;
+  if (!supported) return <p className="text-xs text-[var(--ink-soft)]">This browser cannot receive push notifications. On iPhone: Share → Add to Home Screen, then open the app from the Home Screen.</p>;
   return <div>
-    <button type="button" onClick={on ? disable : enable} disabled={busy} className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${on ? 'border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-red-500/50' : 'bg-amber-500 text-zinc-950 hover:bg-amber-400'}`}>
+    <button type="button" onClick={on ? disable : enable} disabled={busy} className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${on ? 'border border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] text-[var(--ink)] hover:border-red-500/50' : 'bg-amber-500 text-zinc-950 hover:bg-amber-400'}`}>
       {busy ? <Loader2 size={15} className="animate-spin" /> : on ? <BellOff size={15} /> : <Bell size={15} />} {on ? 'Turn off notifications on this device' : 'Turn on job notifications'}
     </button>
-    {msg && <p className="mt-2 text-xs text-zinc-400">{msg}</p>}
-    <p className="mt-2 text-[11px] text-zinc-600">You get a push when an image, voice or video job finishes, even if the app is closed. iPhone needs the app added to the Home Screen.</p>
+    {msg && <p className="mt-2 text-xs text-[var(--ink-soft)]">{msg}</p>}
+    <p className="mt-2 text-[11px] text-[var(--ink-soft)]">You get a push when an image, voice or video job finishes, even if the app is closed. iPhone needs the app added to the Home Screen.</p>
   </div>;
 }

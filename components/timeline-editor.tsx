@@ -54,7 +54,7 @@ function previewWords(text: string, start: number, end: number, t: number) {
   return spans.map((s) => ({ ...s, state: t >= s.b ? 'past' : t >= s.a ? 'now' : 'next' }));
 }
 
-export interface TimelineHandle { addImages: (files: File[]) => Promise<void> }
+export interface TimelineHandle { addImages: (files: File[]) => Promise<void>; addMixed: (files: File[]) => Promise<void> }
 
 export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: string; text: string }[]; onNotice: (m: string) => void }>(function TimelineEditor({ scripts, onNotice }, ref) {
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -108,7 +108,16 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     onNotice(`${made.length} added${skipped ? ` · ${skipped} skipped` : ''}`);
   };
   const addFilesRef = useRef(addFiles); addFilesRef.current = addFiles;
-  useImperativeHandle(ref, () => ({ addImages: (files: File[]) => addFilesRef.current('visual', files) }), []);
+  useImperativeHandle(ref, () => ({
+    addImages: (files: File[]) => addFilesRef.current('visual', files),
+    /** From Document: audio goes to Voiceover, pictures and clips go to Visuals. Input order (natural name order) is kept. */
+    addMixed: async (files: File[]) => {
+      const audio = files.filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg)$/i.test(f.name));
+      const rest = files.filter((f) => !audio.includes(f));
+      if (rest.length) await addFilesRef.current('visual', rest);
+      if (audio.length) await addFilesRef.current('voice', audio);
+    },
+  }), []);
   const removeAsset = (id: string) => {
     setAssets((a) => a.filter((x) => x.id !== id)); setVisuals((v) => v.filter((c) => c.assetId !== id)); setVoices((v) => v.filter((c) => c.assetId !== id));
     setMusicId((m) => (m === id ? null : m)); setSel(null);

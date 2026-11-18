@@ -295,3 +295,8 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .lang-pick{display:flex;gap:8px;margin:10px 0 0}
 .lang-pick button{border:1px solid var(--line);background:transparent;color:var(--ink);padding:6px 14px;border-radius:999px;font:inherit;font-size:13px;cursor:pointer}
 .lang-pick button.active{background:var(--amber);color:#1a1205;border-color:var(--amber)}
+
+/* Module name lives in the top bar; the brand lives only in the sidebar. Hide per-card duplicate titles. */
+.section-heading { display:none; }
+.screen-heading:has(> .section-heading:only-child) { display:none; }
+.screen-heading { padding-bottom:6px; }
