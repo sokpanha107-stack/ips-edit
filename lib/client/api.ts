@@ -1,4 +1,4 @@
-/** Browser-side helpers that talk to the IPS backend (/api/*). */
+/** Browser-side helpers that talk to the Atom Edit backend (/api/*). */
 export type SceneStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
 export interface JobView {

@@ -70,7 +70,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const [caption, setCaption] = useState<CaptionStyle>(defaultCaption);
   const [fontAsset, setFontAsset] = useState<File | null>(null);
   const [userFonts, setUserFonts] = useState<string[]>([]);
-  const [watermark, setWatermark] = useState('@IPS_Edit');
+  const [watermark, setWatermark] = useState('@Atom_Edit');
   const [wmLocked, setWmLocked] = useState(false);
   const [sel, setSel] = useState<Sel>(null);
   const [px, setPx] = useState(60);
@@ -389,7 +389,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     <details className="tl-panel" open>
       <summary><Lock size={15} /> Watermark</summary>
       <div className="tl-wm-row">
-        <input className="studio-input" value={watermark} readOnly={wmLocked} placeholder="@IPS_Edit" onChange={(e) => setWatermark(e.target.value)} aria-label="Watermark text" />
+        <input className="studio-input" value={watermark} readOnly={wmLocked} placeholder="@Atom_Edit" onChange={(e) => setWatermark(e.target.value)} aria-label="Watermark text" />
         <button type="button" className={`toggle ${wmLocked ? 'is-on' : ''}`} onClick={() => setWmLocked((v) => !v)} aria-pressed={wmLocked} aria-label={wmLocked ? 'Unlock watermark' : 'Lock watermark'}><span /></button>
         <span className="tl-lock">{wmLocked ? <><Lock size={13} /> Locked</> : <><Unlock size={13} /> Unlocked</>}</span>
       </div>

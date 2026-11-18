@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════
---  IPS Edit · multi-tenant schema with strict Row Level Security
+--  Atom Edit · multi-tenant schema with strict Row Level Security
 --  Run once: Supabase → SQL Editor → New query → paste everything → Run.
 --  Safe to run again (idempotent). Every table has user_id and the rule
 --  auth.uid() = user_id for select / insert / update / delete.

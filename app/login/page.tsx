@@ -48,7 +48,7 @@ function LoginCard() {
     <div className="w-full max-w-md">
       <div className="mb-8 flex flex-col items-center text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icon-192.png" alt="IPS Edit" width={80} height={80} className="mb-5 h-20 w-20 rounded-[22px] shadow-[0_0_40px_rgba(245,158,11,.25)] ring-1 ring-amber-500/30" />
+        <img src="/icon-192.png" alt="Atom Edit" width={80} height={80} className="mb-5 h-20 w-20 rounded-[22px] shadow-[0_0_40px_rgba(245,158,11,.25)] ring-1 ring-amber-500/30" />
         <h1 className="text-3xl font-bold tracking-tight text-zinc-50">Log in</h1>
       </div>
 
@@ -71,7 +71,7 @@ function LoginCard() {
         </form>
         {msg && <p className={`mt-4 rounded-lg border p-3 text-xs ${msg.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>{msg.text}</p>}
       </div>
-      <p className="mt-6 text-center text-xs text-zinc-600">Thank you for choosing IPS Edit. Please log in to continue. Your work stays private and safe in your own account.</p>
+      <p className="mt-6 text-center text-xs text-zinc-600">Thank you for choosing Atom Edit. Please log in to continue. Your work stays private and safe in your own account.</p>
     </div>
   );
 }

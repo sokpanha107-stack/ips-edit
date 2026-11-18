@@ -5,11 +5,11 @@ import { Inter } from 'next/font/google';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'IPS edit · AI production studio',
+  title: 'Atom Edit · AI production studio',
   description: 'A calm creative desk for AI-powered video and voice production.',
   manifest: '/manifest.json',
-  applicationName: 'IPS edit',
-  appleWebApp: { capable: true, title: 'IPS edit', statusBarStyle: 'default' },
+  applicationName: 'Atom Edit',
+  appleWebApp: { capable: true, title: 'Atom Edit', statusBarStyle: 'default' },
   formatDetection: { telephone: false },
   icons: {
     icon: [{ url: '/icon.svg', type: 'image/svg+xml' }, { url: '/icon-192.png', sizes: '192x192', type: 'image/png' }],

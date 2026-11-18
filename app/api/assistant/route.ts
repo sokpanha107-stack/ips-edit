@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   const cred = await getCredential(au.ctx.db, au.ctx.userId, 'gemini').catch(() => null);
   if (!cred?.key) return NextResponse.json({ error: 'no_key' }, { status: 400 });
 
-  const system = `You are the in-app assistant of "IPS edit". Answer ONLY using the manual below; if something is not covered, say so briefly and suggest the closest feature. `
+  const system = `You are the in-app assistant of "Atom Edit". Answer ONLY using the manual below; if something is not covered, say so briefly and suggest the closest feature. `
     + `Reply in ${language === 'kh' ? 'Khmer (about 98%, keep technical terms in English)' : 'English'}. Give clear numbered step-by-step help. Never ask for or repeat secret keys. The user is currently on the "${screen}" screen.\n\n=== MANUAL ===\n${aboutAsText()}`;
   const parts: unknown[] = [];
   if (image) { const m = image.match(/^data:(image\/[a-z]+);base64,(.*)$/s); if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } }); }

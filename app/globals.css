@@ -340,7 +340,7 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .about-body{flex:1;overflow:auto;padding:20px 18px calc(32px + env(safe-area-inset-bottom));max-width:680px;width:100%;margin:0 auto}
 .about-brand{display:grid;justify-items:center;gap:6px;text-align:center;margin-bottom:18px}
 .about-brand img{border-radius:18px}
-.about-brand h1{font-size:28px;font-weight:700;letter-spacing:.01em}
+.about-brand h1{font:700 30px Georgia,serif;letter-spacing:-.8px}.about-brand h1 em{color:var(--amber-deep);font-weight:400}
 .about-brand p{color:var(--ink-soft);font-size:13px}
 .about-intro{font-size:15px;line-height:1.75;margin-bottom:16px}
 .about-toc{display:grid;gap:4px;padding:12px;margin-bottom:22px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
@@ -363,3 +363,19 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .voice-switch{display:flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:99px;background:var(--card)}
 .voice-switch button{padding:4px 12px;border-radius:99px;font-size:12px;font-weight:600;color:var(--ink-soft)}
 .voice-switch button.active{background:var(--amber);color:#2a1a00}
+.about-top{align-items:center;gap:10px}
+.about-export{padding:9px 16px;border-radius:12px;font-size:13px;margin-right:auto}
+.pdf-sheet{position:fixed;left:-10000px;top:0;background:#f4ecdf;color:#1e293b;font-family:Inter,system-ui,sans-serif;pointer-events:none}
+.pdf-sheet>div{background:#f4ecdf}
+.pdf-brand{display:flex;align-items:center;gap:18px;padding:8px 0 14px;border-bottom:2px solid #d97706}
+.pdf-brand img{border-radius:20px}
+.pdf-brand h1{font:700 44px Georgia,serif;letter-spacing:-1.5px;margin:0}
+.pdf-brand h1 em{color:#b45309;font-weight:400}
+.pdf-brand p{margin:4px 0 0;color:#6b6358;font-size:13px}
+.pdf-p{font-size:15px;line-height:1.8;padding:6px 0}
+.pdf-h{font:700 20px/1.5 Georgia,serif;color:#b45309;padding:6px 0 10px}
+.pdf-fig{width:400px;padding:4px 0}
+.pdf-sec{padding:14px 16px;border:1px solid #cdbfae;border-radius:14px;background:#fffaf2!important}
+.pdf-sec h2{display:flex;gap:10px;align-items:baseline;margin:0 0 8px;font-size:17px;font-weight:700}
+.pdf-sec h2 span{color:#d97706;font-size:12px}
+.pdf-sec p{margin:0;font-size:14px;line-height:1.85;color:#4b453c;white-space:pre-wrap}

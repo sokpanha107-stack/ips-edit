@@ -39,8 +39,8 @@ self.addEventListener('fetch', (event) => {
 // ---- Web Push: show a native notification when a job finishes (sent by the server with the web-push library) ----
 self.addEventListener('push', (event) => {
   let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch { data = { title: 'IPS Edit', body: event.data ? event.data.text() : '' }; }
-  const title = data.title || 'IPS Edit';
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: 'Atom Edit', body: event.data ? event.data.text() : '' }; }
+  const title = data.title || 'Atom Edit';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || '',
     icon: '/icon-192.png',
