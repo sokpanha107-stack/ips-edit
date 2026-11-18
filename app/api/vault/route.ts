@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const body = z.object({
-  service: z.enum(['runpod', 'voice_api']),
+  service: z.enum(['runpod', 'voice_api', 'gemini']),
   key: z.string().trim().max(500).optional(),
   endpoint: z.string().trim().max(500).optional(),
 });

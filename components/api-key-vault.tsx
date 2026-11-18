@@ -5,6 +5,7 @@ import { Eye, EyeOff, KeyRound, Loader2, PlugZap, Trash2 } from 'lucide-react';
 import { api, type VaultService } from '@/lib/client/api';
 
 const INFO = {
+  gemini: { title: 'Gemini AI Assistant', help: 'Powers the in-app AI Assistant. Create a key in Google AI Studio and paste it here. It is stored encrypted and only used by the server.', endpointLabel: '', endpointPh: '', required: 'Required for the AI Assistant.', noEndpoint: true },
   runpod: { title: 'RunPod GPU', help: 'Runs Video Engine jobs on your own GPU. Paste your RunPod API key and the Endpoint ID (or its https URL).', endpointLabel: 'Endpoint ID or URL', endpointPh: 'e.g. abc123xyz or https://api.runpod.ai/v2/abc123xyz', required: 'Needed for: Video Engine' },
   voice_api: { title: 'Premium Voice', help: 'Optional. Your own voice server (e.g. a Khmer voice-clone worker). Without it, the free gTTS voice is used automatically.', endpointLabel: 'Voice server URL', endpointPh: 'https://your-voice-server.example.com', required: 'Optional: premium voice quality' },
 } as const;
@@ -50,9 +51,9 @@ function Card({ s, onChange }: { s: VaultService; onChange: (v: VaultService[]) 
       <button type="button" onClick={() => setShow((v) => !v)} className="grid w-10 place-items-center rounded-lg border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--ink)]" aria-label={show ? 'Hide key' : 'Show key'}>{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
     </div>
 
-    <label className="mt-3 block text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">{info.endpointLabel}</label>
+    {!('noEndpoint' in info) && <><label className="mt-3 block text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">{info.endpointLabel}</label>
     <input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder={info.endpointPh}
-      className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] px-3 py-2.5 text-sm outline-none placeholder:text-[var(--ink-soft)] focus:border-amber-500/60" />
+      className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] px-3 py-2.5 text-sm outline-none placeholder:text-[var(--ink-soft)] focus:border-amber-500/60" /></>}
 
     <div className="mt-3 flex gap-2">
       <button type="button" onClick={save} disabled={busy || (!key && !s.hasKey)} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3 py-2.5 text-sm font-bold text-zinc-950 hover:bg-amber-400 disabled:opacity-50">

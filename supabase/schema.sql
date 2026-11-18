@@ -48,7 +48,7 @@ create table if not exists public.prompt_vault (
 create table if not exists public.api_keys (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  service_name    text not null check (service_name in ('runpod','voice_api')),
+  service_name    text not null check (service_name in ('runpod','voice_api','gemini')),
   key_cipher      text not null,
   key_hint        text not null default '',
   endpoint        text,
@@ -85,6 +85,14 @@ create table if not exists public.push_subscriptions (
 );
 create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
 
+-- AI Assistant usage counter (one row per user per UTC day) for the 98% safety buffer.
+create table if not exists public.ai_usage (
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  day     date not null default (now() at time zone 'utc')::date,
+  calls   integer not null default 0,
+  primary key (user_id, day)
+);
+
 -- ── 1b. Upgrade from the old single-user schema (no-op on a fresh project) ──
 alter table public.ips_jobs     add column if not exists user_id uuid default auth.uid() references auth.users(id) on delete cascade;
 alter table public.ips_scenes   add column if not exists user_id uuid default auth.uid() references auth.users(id) on delete cascade;
@@ -107,11 +115,15 @@ drop trigger if exists documents_same_owner_trg on public.documents;
 create trigger documents_same_owner_trg before insert or update of parent_id, user_id on public.documents
   for each row execute function public.documents_same_owner();
 
+-- Existing projects: allow the new 'gemini' service in the vault.
+alter table public.api_keys drop constraint if exists api_keys_service_name_check;
+alter table public.api_keys add constraint api_keys_service_name_check check (service_name in ('runpod','voice_api','gemini'));
+
 -- ── 2. Row Level Security: owner-only on EVERY table ─────────────────
 do $$
 declare t text;
 begin
-  foreach t in array array['ips_jobs','ips_scenes','prompt_vault','api_keys','documents','push_subscriptions'] loop
+  foreach t in array array['ips_jobs','ips_scenes','prompt_vault','api_keys','documents','push_subscriptions','ai_usage'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('alter table public.%I force row level security', t);
     execute format('revoke all on table public.%I from anon, public', t);

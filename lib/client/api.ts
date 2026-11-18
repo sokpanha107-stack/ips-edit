@@ -42,7 +42,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export interface VaultService { service: 'runpod' | 'voice_api'; hasKey: boolean; hint: string; endpoint: string | null; status: 'connected' | 'failed' | null; checkedAt: string | null }
+export interface VaultService { service: 'runpod' | 'voice_api' | 'gemini'; hasKey: boolean; hint: string; endpoint: string | null; status: 'connected' | 'failed' | null; checkedAt: string | null }
 
 export interface PromptSummary { id: string; title: string; created_at: string; chars: number; preview: string }
 export interface PromptFull { id: string; title: string; content: string; created_at: string }

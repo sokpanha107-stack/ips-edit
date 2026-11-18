@@ -3,8 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { config } from './config';
 import { fetchJson, normalizeBase } from './endpoint';
 
-export type Service = 'runpod' | 'voice_api';
-export const SERVICES: Service[] = ['runpod', 'voice_api'];
+export type Service = 'runpod' | 'voice_api' | 'gemini';
+export const SERVICES: Service[] = ['runpod', 'voice_api', 'gemini'];
 
 /* ---------- AES-256-GCM: the database only ever holds ciphertext ---------- */
 function secretKey(): Buffer {
@@ -82,6 +82,10 @@ export async function recordStatus(db: SupabaseClient, userId: string, service: 
 /** Live check. RunPod: endpoint /health, or (no endpoint yet) a key check against RunPod's API. Voice API: the worker's /health or /hardware. */
 export async function testCredential(service: Service, cred: Credential): Promise<{ ok: boolean; message: string }> {
   try {
+    if (service === 'gemini') {
+      const r = await fetchJson('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', { headers: { 'x-goog-api-key': cred.key } });
+      return r.ok ? { ok: true, message: 'Gemini key accepted.' } : { ok: false, message: r.status === 400 || r.status === 403 ? 'Google rejected this key.' : `Gemini check failed (${r.status}).` };
+    }
     const auth = { Authorization: `Bearer ${cred.key}` };
     if (service === 'runpod' && !cred.endpoint) {
       const r = await fetchJson('https://api.runpod.io/graphql', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '{ myself { id } }' }) });
