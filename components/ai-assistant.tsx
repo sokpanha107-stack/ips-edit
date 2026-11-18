@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ImagePlus, Loader2, Mic, MicOff, Send, Sparkles, Volume2, VolumeX, X, AlertTriangle } from 'lucide-react';
 
 type Msg = { role: 'user' | 'model'; text: string; image?: string };
@@ -8,6 +9,7 @@ type Lang = 'kh' | 'en';
 
 const T = {
   kh: {
+    short: 'សួរ AI',
     ask: 'សួរ AI អំពីអេក្រង់នេះ ឬ App ទាំងមូល…', title: 'AI Assistant', ph: 'វាយសំណួរ…', send: 'ផ្ញើ', mic: 'និយាយ', listening: 'កំពុងស្តាប់…', image: 'ផ្ញើរូប',
     noKey: 'សូមដាក់ Gemini key ក្នុង Settings → API Key Vault សិន។', thinking: 'កំពុងគិត…', listen: 'ស្តាប់ចម្លើយ', stop: 'បញ្ឈប់', noSpeech: 'ឧបករណ៍នេះមិនគាំទ្រការនិយាយទេ',
     noTts: 'ឧបករណ៍នេះគ្មានសំឡេងអានភាសាខ្មែរ។ សូមដំឡើង Khmer voice ក្នុង Settings របស់ទូរស័ព្ទ។', usage: 'ការប្រើប្រាស់ថ្ងៃនេះ', close: 'បិទ', ok: 'យល់ព្រម',
@@ -15,6 +17,7 @@ const T = {
     quota: (p: number, pct: number) => `ការប្រើប្រាស់ AI របស់អ្នកបានដល់កម្រិតកំណត់សុវត្ថិភាព (${pct}%) ហើយ! ប្រព័ន្ធបានផ្អាកជាបណ្ដោះអាសន្ន ដើម្បីការពារការចំណាយលើសកំណត់។ (បានប្រើ ${p}%) សូមព្យាយាមម្តងទៀតថ្ងៃស្អែក។`,
   },
   en: {
+    short: 'Ask AI',
     ask: 'Ask AI about this screen or the whole app…', title: 'AI Assistant', ph: 'Type a question…', send: 'Send', mic: 'Speak', listening: 'Listening…', image: 'Attach image',
     noKey: 'Add your Gemini key in Settings → API Key Vault first.', thinking: 'Thinking…', listen: 'Read aloud', stop: 'Stop', noSpeech: 'Speech input is not supported on this device',
     noTts: 'This device has no voice for this language. Install one in your phone settings.', usage: "Today's usage", close: 'Close', ok: 'OK',
@@ -35,6 +38,8 @@ async function toDataUrl(file: File): Promise<string> {
 export function AiAssistant({ screen, language }: { screen: string; language: Lang }) {
   const t = T[language];
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState('');
   const [img, setImg] = useState<string | null>(null);
@@ -101,8 +106,8 @@ export function AiAssistant({ screen, language }: { screen: string; language: La
   const pick = async (f?: File) => { if (!f) return; try { setImg(await toDataUrl(f)); } catch { setErr('Could not read the image'); } };
 
   return <>
-    <button type="button" className="ai-bar" onClick={() => setOpen(true)} aria-label={t.title}><Sparkles size={16} /><span>{t.ask}</span></button>
-    {open && <div className="ai-sheet" role="dialog" aria-label={t.title}>
+    <button type="button" className="ai-bar" onClick={() => setOpen(true)} aria-label={t.title}><Sparkles size={16} /><span>{t.short}</span></button>
+    {mounted && createPortal(<>{open && <div className="ai-sheet" role="dialog" aria-label={t.title}>
       <div className="ai-head"><Sparkles size={18} /><strong>{t.title}</strong>
         {pct !== null && <span className="ai-meter" title={t.usage}><i style={{ width: `${Math.min(100, pct)}%` }} /></span>}
         <button type="button" className="icon-button" onClick={() => { window.speechSynthesis?.cancel(); setOpen(false); }} aria-label={t.close}><X size={20} /></button></div>
@@ -128,6 +133,6 @@ export function AiAssistant({ screen, language }: { screen: string; language: La
     </div>}
     {quota && <div className="modal-backdrop" onMouseDown={() => setQuota(null)}><div className="ai-quota" role="alertdialog" onMouseDown={(e) => e.stopPropagation()}>
       <AlertTriangle size={28} /><h3>{t.quotaTitle}</h3><p>{t.quota(quota.percent, quota.buffer)}</p>
-      <button type="button" className="primary-button" onClick={() => setQuota(null)}>{t.ok}</button></div></div>}
+      <button type="button" className="primary-button" onClick={() => setQuota(null)}>{t.ok}</button></div></div>}</>, document.body)}
   </>;
 }

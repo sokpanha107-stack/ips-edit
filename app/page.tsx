@@ -352,7 +352,7 @@ export default function Home() {
   const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: t.voiceLibrary, video: t.videoEngine, kh: t.khEngine, en: t.enEngine, timeline: 'Timeline Editor', image: 'Image Engine', history: t.history };
   const tabIdx = menuOpen ? 0 : -1;
 
-  return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button><h1 className="top-title">{tabLabel[activeTab] ?? ''}</h1>{(activeTab === 'kh' || activeTab === 'en') && <div className="voice-switch" role="tablist" aria-label="Voice language"><button type="button" role="tab" aria-selected={activeTab === 'kh'} className={activeTab === 'kh' ? 'active' : ''} onClick={() => setActiveTab('kh')}>KH</button><button type="button" role="tab" aria-selected={activeTab === 'en'} className={activeTab === 'en' ? 'active' : ''} onClick={() => setActiveTab('en')}>EN</button></div>}</header><BatchBanner />
+  return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button>{(activeTab === 'kh' || activeTab === 'en') && <div className="voice-switch" role="tablist" aria-label="Voice language"><button type="button" role="tab" aria-selected={activeTab === 'kh'} className={activeTab === 'kh' ? 'active' : ''} onClick={() => setActiveTab('kh')}>KH</button><button type="button" role="tab" aria-selected={activeTab === 'en'} className={activeTab === 'en' ? 'active' : ''} onClick={() => setActiveTab('en')}>EN</button></div>}<h1 className="top-title">{activeTab === 'kh' || activeTab === 'en' ? 'Voice Engine' : (tabLabel[activeTab] ?? '')}</h1>{!settingsOpen && !commandOpen && <AiAssistant screen={tabLabel[activeTab] ?? activeTab} language={language} />}</header><BatchBanner />
     <div className={`side-overlay ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
     <aside className={`side-drawer ${menuOpen ? 'open' : ''}`} aria-label="Navigation" aria-hidden={!menuOpen}>
       <div className="side-head"><Brand t={t} /><button type="button" className="icon-button" onClick={() => setMenuOpen(false)} aria-label={t.close ?? 'Close'}><X size={20} /></button></div>
@@ -370,7 +370,7 @@ export default function Home() {
         <button type="button" tabIndex={tabIdx} className="side-item" onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}><Settings2 size={20} /><span>{t.settings}</span></button>
       </nav>
     </aside>
-    <div className="workspace">{notice && <div className="notice"><Check size={16} />{notice}</div>}<AiAssistant screen={tabLabel[activeTab] ?? activeTab} language={language} />
+    <div className="workspace">{notice && <div className="notice"><Check size={16} />{notice}</div>}
       <div hidden={activeTab !== 'script'}><ScriptPrepScreen language={language} anchor={drafts.video.audio.map((a) => a.seconds)} onSend={sendScript} onNotice={showNotice} /></div>
       <div hidden={activeTab !== 'timeline'}><TimelineEditor ref={timelineRef} scripts={[{ label: 'KH', text: drafts.kh.script }, { label: 'EN', text: drafts.en.script }]} onNotice={showNotice} /></div>
       <div hidden={activeTab !== 'prompts'}>{on('prompts') && <PromptLibrary active={activeTab === 'prompts'} onNotice={showNotice} />}</div>

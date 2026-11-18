@@ -306,7 +306,7 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .batch-track i{display:block;height:100%;background:#2a1a00;transition:width .4s}
 
 /* ── AI assistant ── */
-.ai-bar{display:flex;align-items:center;gap:8px;width:100%;margin:0 0 12px;padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink-soft);font-size:13px;text-align:left}
+.ai-bar{display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:none;padding:8px 13px;border:1px solid var(--line);border-radius:99px;background:var(--card);color:var(--ink);font-size:13px;font-weight:600}
 .ai-bar svg{color:var(--amber-deep);flex:none}
 .ai-bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ai-sheet{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
@@ -360,6 +360,6 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .acc-panel{padding:0 16px 16px}
 .acc .settings-block{border:0;background:transparent;padding:0;margin:0}
 .acc .settings-title{display:none}
-.voice-switch{display:flex;gap:2px;margin-left:auto;padding:3px;border:1px solid var(--line);border-radius:99px;background:var(--card)}
+.voice-switch{display:flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:99px;background:var(--card)}
 .voice-switch button{padding:4px 12px;border-radius:99px;font-size:12px;font-weight:600;color:var(--ink-soft)}
 .voice-switch button.active{background:var(--amber);color:#2a1a00}

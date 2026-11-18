@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Eye, EyeOff, KeyRound, Loader2, PlugZap, Trash2 } from 'lucide-react';
 import { api, type VaultService } from '@/lib/client/api';
 
@@ -11,7 +11,11 @@ const INFO = {
   voice_api: { title: 'Premium Voice', help: 'Optional. Your own voice server (e.g. a Khmer voice-clone worker). Without it, the free gTTS voice is used automatically.', endpointLabel: 'Voice server URL', endpointPh: 'https://your-voice-server.example.com', required: 'Optional: premium voice quality' },
 } as const;
 
-function Card({ s, onChange }: { s: VaultService; onChange: (v: VaultService[]) => void }) {
+function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)} className={`relative h-6 w-11 flex-none rounded-full border border-[var(--line)] transition-colors ${on ? 'bg-[var(--amber)]' : 'bg-[color-mix(in_srgb,var(--ink)_14%,transparent)]'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? 'left-[22px]' : 'left-0.5'}`} /></button>;
+}
+
+function Card({ s, onChange, enabled, onToggle }: { s: VaultService; onChange: (v: VaultService[]) => void; enabled: boolean; onToggle: (v: boolean) => void }) {
   const info = INFO[s.service];
   const [key, setKey] = useState('');
   const [endpoint, setEndpoint] = useState(s.endpoint ?? '');
@@ -39,8 +43,10 @@ function Card({ s, onChange }: { s: VaultService; onChange: (v: VaultService[]) 
   return <section className="rounded-xl border border-[var(--line)] bg-[var(--card)] p-4 text-[var(--ink)]">
     <div className="flex items-center gap-2">
       <KeyRound size={16} className="text-[var(--amber-deep)]" /><h4 className="text-sm font-semibold">{info.title}</h4>
-      <span className={`ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${pill.c}`}>{pill.t}</span>
+      {enabled && <span className={`ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${pill.c}`}>{pill.t}</span>}
+      <span className={enabled ? '' : 'ml-auto'}><Switch on={enabled} onChange={onToggle} label={`${info.title} on/off`} /></span>
     </div>
+    {enabled && <>
     <p className="mt-1 text-xs leading-relaxed text-[var(--ink-soft)]">{info.help}</p>
     <p className="mt-1 text-[11px] text-[var(--amber-deep)]">{info.required}</p>
 
@@ -64,11 +70,25 @@ function Card({ s, onChange }: { s: VaultService; onChange: (v: VaultService[]) 
     </div>
     {msg && <p className={`mt-2 text-xs ${msg.ok ? 'text-emerald-700' : 'text-red-700'}`}>{msg.text}</p>}
     <p className="mt-2 text-[11px] text-[var(--ink-soft)]">Stored encrypted. The key is never sent back to this screen.</p>
+    </>}
   </section>;
 }
 
 export function ApiKeyVault({ services, error, onChange }: { services: VaultService[] | null; error?: string; onChange: (v: VaultService[]) => void }) {
   if (!services) return <p className="text-xs text-[var(--ink-soft)]">Loading vault…</p>;
   if (error || services.length === 0) return <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-xs leading-relaxed text-red-700"><p className="font-semibold">Vault is not ready</p><p className="mt-1 break-words">{error || 'No response from the server.'}</p><p className="mt-2 text-red-700">Check: (1) supabase/schema.sql was run in the Supabase SQL Editor, (2) VAULT_ENCRYPTION_KEY is set in Vercel, (3) the app was redeployed after adding env vars.</p></div>;
-  return <div className="space-y-3">{services.map((s) => <Card key={s.service} s={s} onChange={onChange} />)}</div>;
+  return <VaultList services={services} onChange={onChange} />;
+}
+
+const OFF_KEY = 'ips-vault-off';
+function VaultList({ services, onChange }: { services: VaultService[]; onChange: (v: VaultService[]) => void }) {
+  const [off, setOff] = useState<string[]>([]);
+  useEffect(() => { try { setOff(JSON.parse(window.localStorage.getItem(OFF_KEY) || '[]')); } catch { /* storage unavailable */ } }, []);
+  const toggle = (id: string, on: boolean) => setOff((cur) => {
+    const next = on ? cur.filter((x) => x !== id) : [...cur.filter((x) => x !== id), id];
+    try { window.localStorage.setItem(OFF_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+    return next;
+  });
+  const sorted = [...services].sort((a, b) => Number(off.includes(a.service)) - Number(off.includes(b.service)));   // stable: switched-off cards sink to the bottom
+  return <div className="space-y-3">{sorted.map((s) => <Card key={s.service} s={s} onChange={onChange} enabled={!off.includes(s.service)} onToggle={(on) => toggle(s.service, on)} />)}</div>;
 }
