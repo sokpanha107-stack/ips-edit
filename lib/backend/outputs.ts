@@ -30,12 +30,19 @@ async function fetchBytes(rawUrl: string): Promise<{ bytes: Buffer; mime: string
  * Groups a finished job's outputs into a NEW folder in the user's "Document" cloud storage, then pushes a notification to their devices.
  * Files are copied into Supabase Storage under "<uid>/<folderId>/…" (private bucket, RLS by folder).
  */
-export async function fileOutputs(ctx: Ctx, input: { kind: OutputKind; title: string; items: OutputItem[] }) {
+export async function fileOutputs(ctx: Ctx, input: { kind: OutputKind; title: string; items: OutputItem[]; /** append to this existing folder (per-scene checkpoints) */ folderId?: string; /** false = save silently; the final call sends the push */ notify?: boolean }) {
   const { db, userId } = ctx;
   const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
-  const folder = await db.from('documents').insert({ user_id: userId, kind: 'folder', name: safeName(`${input.title} · ${stamp}`), source: input.kind }).select('id').single();
-  if (folder.error) throw new Error(folder.error.message);
-  const folderId = folder.data.id as string;
+  let folderId: string;
+  if (input.folderId) {
+    const f = await db.from('documents').select('id').eq('id', input.folderId).eq('kind', 'folder').maybeSingle();
+    if (f.error || !f.data) throw new Error('folder not found');
+    folderId = input.folderId;
+  } else {
+    const folder = await db.from('documents').insert({ user_id: userId, kind: 'folder', name: safeName(`${input.title} · ${stamp}`), source: input.kind }).select('id').single();
+    if (folder.error) throw new Error(folder.error.message);
+    folderId = folder.data.id as string;
+  }
   let saved = 0, failed = 0;
 
   const one = async (item: OutputItem, i: number) => {
@@ -62,9 +69,9 @@ export async function fileOutputs(ctx: Ctx, input: { kind: OutputKind; title: st
   };
   for (let i = 0; i < input.items.length; i += 3) await Promise.all(input.items.slice(i, i + 3).map((it, j) => one(it, i + j)));
 
-  await notifyUser(db, userId, {
+  if (input.notify !== false) await notifyUser(db, userId, {
     title: TITLE[input.kind],
-    body: failed ? `${saved} saved, ${failed} could not be copied. Open Document to see the folder.` : `${saved} file${saved === 1 ? '' : 's'} saved in Document → "${input.title}".`,
+    body: !input.items.length ? `All files are saved in Document → "${input.title}".` : failed ? `${saved} saved, ${failed} could not be copied. Open Document to see the folder.` : `${saved} file${saved === 1 ? '' : 's'} saved in Document → "${input.title}".`,
     url: '/?tab=documents', tag: `job-${input.kind}`,
   });
   return { folderId, saved, failed };

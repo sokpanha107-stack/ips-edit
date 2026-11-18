@@ -62,8 +62,8 @@ export const api = {
     call<{ ok: boolean; message: string; services: VaultService[] }>('/api/vault', { method: 'PUT', body: JSON.stringify({ service, ...(key ? { key } : {}), endpoint }) }),
   deleteVault: (service: VaultService['service']) => call<{ services: VaultService[] }>(`/api/vault?service=${service}`, { method: 'DELETE' }),
   /** Files finished outputs into a new Document folder and sends the push notification. */
-  fileOutputs: (kind: 'image' | 'voice' | 'video', title: string, items: { name: string; url: string }[]) =>
-    call<{ ok: boolean; folderId: string; saved: number; failed: number }>('/api/outputs', { method: 'POST', body: JSON.stringify({ kind, title, items }) }),
+  fileOutputs: (kind: 'image' | 'voice' | 'video', title: string, items: { name: string; url: string }[], extra: { folderId?: string; notify?: boolean } = {}) =>
+    call<{ ok: boolean; folderId: string; saved: number; failed: number }>('/api/outputs', { method: 'POST', body: JSON.stringify({ kind, title, items, ...extra }) }),
   connect: (ep: VideoEndpoint, mode: 'connect' | 'refresh' = 'connect') =>
     call<ConnectResult>('/api/connect', { method: 'POST', body: JSON.stringify({ url: ep.url, key: ep.key || undefined, mode }) }),
   getJob: (id: string) => call<JobView>(`/api/jobs/${id}`),

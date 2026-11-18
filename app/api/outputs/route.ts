@@ -9,7 +9,9 @@ export const maxDuration = 60;
 const body = z.object({
   kind: z.enum(['image', 'voice', 'video']),
   title: z.string().trim().min(1).max(100),
-  items: z.array(z.object({ name: z.string().trim().min(1).max(120), url: z.string().url().max(2000) })).min(1).max(100),
+  items: z.array(z.object({ name: z.string().trim().min(1).max(120), url: z.string().url().max(2000) })).max(100),
+  folderId: z.string().uuid().optional(),
+  notify: z.boolean().optional(),
 });
 
 /**

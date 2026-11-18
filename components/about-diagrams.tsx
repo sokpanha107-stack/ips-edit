@@ -24,7 +24,7 @@ export function WorkflowDiagram() {
     <Box x={186} y={96} w={160} h={60} title="Image Engine" sub="1 image / scene" accent />
     <Arrow x1={94} y1={156} x2={150} y2={196} />
     <Arrow x1={266} y1={156} x2={210} y2={196} />
-    <Box x={50} y={196} w={260} h={64} title="Batch Processing · up to 100 scenes" sub="sequential · progress: Scene 12/100" accent />
+    <Box x={50} y={196} w={260} h={64} title="Batch Processing · up to 100 scenes" sub="one by one · auto-saved · resumes" accent />
     <Arrow x1={180} y1={260} x2={180} y2={298} />
     <Box x={90} y={298} w={180} h={50} title="Video Engine (optional)" sub="GPU render" />
     <Arrow x1={180} y1={348} x2={180} y2={386} />
