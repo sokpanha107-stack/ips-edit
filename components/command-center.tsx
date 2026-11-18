@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Eye, EyeOff, Gauge, Image as ImageIcon, Mic2, Plug, Film, X } from 'lucide-react';
+import { getPod, setPod, podCall, type PodStatus } from '@/lib/client/pod';
 import { api, getEngineEndpoint, setEngineEndpoint, type EngineKind, type ConnectResult, type HardwareInfo } from '@/lib/client/api';
 
 interface Labels { commandCenter: string; close: string; done: string; performance: string; vram: string; storage: string; activeTasks: string }
@@ -131,6 +132,48 @@ function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t:
   </>;
 }
 
+function PodPanel({ language }: { language: 'en' | 'kh' }) {
+  const kh = language === 'kh';
+  const [podId, setPodId] = useState('');
+  const [auto, setAuto] = useState(false);
+  const [st, setSt] = useState<PodStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { const p = getPod(); setPodId(p.podId); setAuto(p.auto); }, []);
+  const save = (id: string, a: boolean) => setPod({ podId: id.trim(), auto: a });
+  const refresh = useCallback(async (id: string) => { if (id) setSt(await podCall('status', id)); }, []);
+  useEffect(() => {
+    if (!podId.trim()) return;
+    void refresh(podId.trim());
+    const t = window.setInterval(() => void refresh(podId.trim()), 8000);
+    return () => window.clearInterval(t);
+  }, [podId, refresh]);
+  const power = async (a: 'start' | 'stop') => { setBusy(true); const r = await podCall(a, podId.trim()); if (!r.ok) setSt(r); else await refresh(podId.trim()); setBusy(false); };
+  const num = (v?: number | null) => (typeof v === 'number' ? `${Math.round(v)}%` : '—');
+  return <section className="cc-block">
+    <div className="cc-title"><Gauge size={15} /><strong>RunPod Pod</strong></div>
+    <input className="studio-input" aria-label="Pod ID" placeholder={kh ? 'Pod ID (ស្រេចចិត្ត)' : 'Pod ID (optional)'} value={podId} autoComplete="off" autoCapitalize="off" spellCheck={false}
+      onChange={(e) => { setPodId(e.target.value); save(e.target.value, auto); }} />
+    <p className="access-help">{kh ? 'សម្រាប់ Pod ប៉ុណ្ណោះ (Serverless គ្រប់គ្រង Start/Stop ខ្លួនឯង ហើយមិនបង្ហាញ CPU/RAM/VRAM ទេ)។ ប្រើ API key ក្នុង Vault។' : 'For Pods only (Serverless starts/stops itself and reports no CPU/RAM/VRAM). Uses the API key from your Vault.'}</p>
+    {podId.trim() && <>
+      {st && !st.ok && <div className="access-status bad">{st.error}</div>}
+      {st?.ok && <div className="gpu-monitor-grid">
+        <article><span>{st.gpu ?? 'GPU'}</span><strong>{st.state}</strong><small>GPU {num(st.gpuPct)}</small></article>
+        <article><span>CPU</span><strong>{num(st.cpuPct)}</strong><div className="usage-bar"><i style={{ width: `${st.cpuPct ?? 0}%` }} /></div></article>
+        <article><span>VRAM</span><strong>{num(st.vramPct)}</strong><div className="usage-bar"><i style={{ width: `${st.vramPct ?? 0}%` }} /></div></article>
+        <article><span>RAM</span><strong>{num(st.ramPct)}</strong><small>{st.ramGb ? `${st.ramGb} GB` : ''}</small><div className="usage-bar"><i style={{ width: `${st.ramPct ?? 0}%` }} /></div></article>
+      </div>}
+      <div className="flex gap-2">
+        <button type="button" className="access-test" disabled={busy} onClick={() => void power('start')}>{kh ? 'បើក Pod' : 'Start Pod'}</button>
+        <button type="button" className="access-test" disabled={busy} onClick={() => void power('stop')}>{kh ? 'បិទ Pod' : 'Stop Pod'}</button>
+      </div>
+      <label className="access-help" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); save(podId, e.target.checked); }} />
+        {kh ? 'បើកស្វ័យប្រវត្តិពេលចាប់ផ្តើមការងារ ហើយបិទពេលចប់' : 'Auto-start when a job begins, auto-stop when it finishes'}
+      </label>
+    </>}
+  </section>;
+}
+
 export function CommandCenter({ open, onClose, t, language, show }: { open: boolean; onClose: () => void; t: Labels; language: 'en' | 'kh'; show: { voice: boolean; video: boolean; image: boolean } }) {
   const c = copy[language];
   if (!open) return null;
@@ -142,6 +185,7 @@ export function CommandCenter({ open, onClose, t, language, show }: { open: bool
       {show.voice && <section className="cc-block"><div className="cc-title"><Mic2 size={15} /><strong>{c.voice}</strong></div><p className="access-help">Voice keys live in Settings → API Key Vault (encrypted, never shown again). With no Premium Voice key, the free gTTS voice is used.</p></section>}
       {show.video && <EnginePanel kind="video" open={open} t={t} c={c} />}
       {show.image && <EnginePanel kind="image" open={open} t={t} c={c} />}
+      {(show.video || show.image) && <PodPanel language={language} />}
     </div>
     <button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.done}</button>
   </aside></div>;

@@ -1,5 +1,6 @@
 'use client';
 
+import { podPowerOff, podPowerOn } from '@/lib/client/pod';
 import { setBatchProgress } from '@/lib/client/progress';
 import { api } from '@/lib/client/api';
 import { useEffect, useRef, useState } from 'react';
@@ -60,6 +61,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
     const opt: ImageOptions = { width: fast ? f.fastW : f.width, height: fast ? f.fastH : f.height, scale, steps: fast ? 20 : 30, seed, negative: '' };
     setPhase('busy'); setSt(null); setThumbs([]);
     try {
+      await podPowerOn();
       const job = await startImageJob(sig, prompts, opt);
       jobRef.current = job;
       const seen = new Set<number>();
@@ -76,6 +78,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
           await onImages([file]);
           setThumbs((t) => [...t, { name: im.name, url: URL.createObjectURL(file) }]);
         }
+        if (s.status === 'DONE' || s.status === 'FAILED' || s.status === 'CANCELLED') void podPowerOff();
         if (s.status === 'DONE') {
           setPhase('done'); onNotice(c.done);
           // file the pictures into a new Document folder + push notification (best effort: never blocks the Timeline)

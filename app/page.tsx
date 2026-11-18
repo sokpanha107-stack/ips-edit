@@ -1,5 +1,6 @@
 'use client';
 
+import { podPowerOff, podPowerOn } from '@/lib/client/pod';
 import { setBatchProgress, useBatchProgress } from '@/lib/client/progress';
 import { useEffect, useRef, useState } from 'react';
 import { AudioFolderPicker, AudioReport, readAudioUrl, videoCopy, type AudioItem } from '@/components/audio-folder';
@@ -186,6 +187,7 @@ function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, dr
       } catch { /* leave the previous anchor untouched */ }
     };
     const finish = (view: JobView) => {
+      if (type === 'video') void podPowerOff();
       setIsProcessing(false);
       setJobId(null);
       try { window.localStorage.removeItem(storeKey); } catch { /* storage unavailable */ }
@@ -231,6 +233,7 @@ function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, dr
       const scenes = parsed.length ? parsed : useAudio ? audio.map(() => '') : [''];
       let sample: string | undefined;
       if (!isVideo && voiceProfile) { const b = await getVoiceBlob(voiceProfile.id); if (b) sample = await blobToDataUrl(b); }
+      if (type === 'video') await podPowerOn();
       const created = await api.createJob({
         engine: type, folder: draft.folder.trim(), masterPrompt: draft.prompt.trim(), scenes,
         imageDataUrl: isVideo && image ? await imageToDataUrl(image.url) : undefined, voiceId: voiceProfile?.name,
