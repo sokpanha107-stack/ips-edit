@@ -3,8 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { config } from './config';
 import { fetchJson, normalizeBase } from './endpoint';
 
-export type Service = 'runpod' | 'voice_api' | 'gemini';
-export const SERVICES: Service[] = ['runpod', 'voice_api', 'gemini'];
+export type Service = 'runpod' | 'voice_api' | 'gemini' | 'video';
+export const SERVICES: Service[] = ['runpod', 'voice_api', 'gemini', 'video'];
 
 /* ---------- AES-256-GCM: the database only ever holds ciphertext ---------- */
 function secretKey(): Buffer {
@@ -105,3 +105,12 @@ export async function testCredential(service: Service, cred: Credential): Promis
 }
 
 export const serviceFor = (engine: 'video' | 'kh' | 'en'): Service => (engine === 'video' ? 'runpod' : 'voice_api');
+
+/** Video jobs use the dedicated "video" entry when it holds a key + endpoint, otherwise the shared RunPod entry (so nothing changes for existing setups). */
+export async function resolveCredential(db: SupabaseClient, userId: string, engine: 'video' | 'kh' | 'en') {
+  if (engine === 'video') {
+    const v = await getCredential(db, userId, 'video').catch(() => null);
+    if (v?.key && v.endpoint) return v;
+  }
+  return getCredential(db, userId, serviceFor(engine));
+}

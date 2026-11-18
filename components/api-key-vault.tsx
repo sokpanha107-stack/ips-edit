@@ -7,6 +7,7 @@ import { api, type VaultService } from '@/lib/client/api';
 const INFO = {
   gemini: { title: 'Gemini AI Assistant', help: 'Powers the in-app AI Assistant. Create a key in Google AI Studio and paste it here. It is stored encrypted and only used by the server.', endpointLabel: '', endpointPh: '', required: 'Required for the AI Assistant.', noEndpoint: true },
   runpod: { title: 'RunPod GPU', help: 'Runs Video Engine jobs on your own GPU. Paste your RunPod API key and the Endpoint ID (or its https URL).', endpointLabel: 'Endpoint ID or URL', endpointPh: 'e.g. abc123xyz or https://api.runpod.ai/v2/abc123xyz', required: 'Needed for: Video Engine' },
+  video: { title: 'Video Engine', help: 'Optional. A separate GPU/server just for Video Engine (same contract as RunPod). If empty, the RunPod entry above is used.', endpointLabel: 'Video server URL or Endpoint ID', endpointPh: 'https://… or RunPod endpoint ID', required: 'Optional: dedicated video server' },
   voice_api: { title: 'Premium Voice', help: 'Optional. Your own voice server (e.g. a Khmer voice-clone worker). Without it, the free gTTS voice is used automatically.', endpointLabel: 'Voice server URL', endpointPh: 'https://your-voice-server.example.com', required: 'Optional: premium voice quality' },
 } as const;
 

@@ -5,7 +5,7 @@ import { getProvider } from './providers';
 import { ProviderConfigError } from './providers/types';
 import type { Ctx } from './session';
 import { getStore } from './store';
-import { endpointBase, getCredential, serviceFor } from './vault';
+import { endpointBase, resolveCredential } from './vault';
 import type { Job, Scene } from './types';
 import type { SceneResult } from './providers/types';
 
@@ -25,7 +25,7 @@ export interface NewJob {
 export async function createJob(ctx: Ctx, input: NewJob): Promise<Job> {
   if (input.scenes.length > config.maxScenes()) throw new Error(`Too many scenes (max ${config.maxScenes()})`);
   // Which worker? Video always needs the user's RunPod key. Voice uses their Premium Voice key if saved, otherwise the free gTTS tool.
-  const cred = await getCredential(ctx.db, ctx.userId, serviceFor(input.engine));
+  const cred = await resolveCredential(ctx.db, ctx.userId, input.engine);
   if (input.engine === 'video' && !cred?.endpoint) throw new ProviderConfigError('Add your RunPod key and Endpoint ID in Settings → API Key Vault first.');
   const provider = input.engine !== 'video' && !cred?.endpoint ? 'gtts' : 'http';
   getProvider(provider);
@@ -44,7 +44,7 @@ export async function createJob(ctx: Ctx, input: NewJob): Promise<Job> {
 /** The provider sees the user's decrypted endpoint only in memory for this call; it is never written to the database. */
 async function withEndpoint(ctx: Ctx, job: Job): Promise<Job> {
   if (job.provider !== 'http') return job;
-  const cred = await getCredential(ctx.db, job.userId ?? ctx.userId, serviceFor(job.engine));
+  const cred = await resolveCredential(ctx.db, job.userId ?? ctx.userId, job.engine);
   if (!cred?.endpoint) throw new ProviderConfigError('API key missing: add it in Settings → API Key Vault.');
   return { ...job, options: { ...job.options, _endpoint: { url: endpointBase(cred.endpoint), key: cred.key } } };
 }
