@@ -1,5 +1,6 @@
 'use client';
 
+import { setBatchProgress } from '@/lib/client/progress';
 import { api } from '@/lib/client/api';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Download, ImagePlus, Lock, Send, Sparkles, Unlock, X } from 'lucide-react';
@@ -67,6 +68,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
         if (jobRef.current?.id !== job.id) return;
         const s = await imageStatus(job);
         setSt(s);
+        setBatchProgress(s.status === 'DONE' || s.status === 'FAILED' || s.status === 'CANCELLED' ? null : { label: 'Image', done: s.done ?? 0, total: s.total ?? prompts.length });
         for (const im of s.images) {          // each finished picture goes straight into the Timeline's media bin
           if (seen.has(im.index)) continue;
           seen.add(im.index);
@@ -83,11 +85,12 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
         if (s.status === 'FAILED' || s.status === 'CANCELLED') { setPhase('error'); setErr(s.status === 'CANCELLED' ? 'Cancelled.' : s.error || 'Image generation failed.'); return; }
       }
     } catch (e) {
+      setBatchProgress(null);
       const m = e instanceof Error ? e.message : 'Failed';
       setPhase('error'); setErr(m === 'NO_ENDPOINT' ? c.noEp : m === 'RUNPOD' ? c.runpod : m);
     }
   };
-  const cancel = async () => { const j = jobRef.current; jobRef.current = null; if (j) await cancelImageJob(j); setPhase('idle'); };
+  const cancel = async () => { const j = jobRef.current; jobRef.current = null; setBatchProgress(null); if (j) await cancelImageJob(j); setPhase('idle'); };
 
   return <section className="screen-card engine-screen image-screen">
     <div className="screen-heading"><div className="section-heading"><div className="heading-icon"><Sparkles size={18} /></div><div className="heading-only"><span className="eyebrow">{c.eyebrow}</span></div></div></div>

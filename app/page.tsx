@@ -1,5 +1,6 @@
 'use client';
 
+import { setBatchProgress, useBatchProgress } from '@/lib/client/progress';
 import { useEffect, useRef, useState } from 'react';
 import { AudioFolderPicker, AudioReport, readAudioUrl, videoCopy, type AudioItem } from '@/components/audio-folder';
 import { ScriptPrepScreen } from '@/components/script-tools';
@@ -62,6 +63,14 @@ const navItems = (t: Copy): { id: Tab; label: string; shortLabel: string; icon: 
 type Voice = { id: string; name: string; type: string; initials: string; color: string; length: string };
 const VOICE_COLORS = ['#b45309', '#1e3a5f', '#6b4f3b', '#667f71', '#7c3a5c', '#3d5a80'];
 const toVoice = (m: VoiceMeta, i: number): Voice => ({ id: m.id, name: m.name, type: m.type, initials: m.name.replace(/[^\p{L}\p{N} ]/gu, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => Array.from(w)[0]).join('').toUpperCase() || 'V', color: VOICE_COLORS[i % VOICE_COLORS.length], length: fmtLen(m.seconds) });
+
+function BatchBanner() {
+  const p = useBatchProgress();
+  if (!p) return null;
+  const cur = Math.min(p.total, p.done + 1);
+  const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+  return <div className="batch-banner" role="status" aria-live="polite"><span>{`Processing ${p.label} Scene ${cur}/${p.total}…`}</span><div className="batch-track"><i style={{ width: `${pct}%` }} /></div></div>;
+}
 
 function Toggle({ checked, onChange, label, connecting }: { checked: boolean; onChange: () => void; label: string; connecting?: boolean }) {
   return <button type="button" aria-label={label} aria-pressed={checked} onClick={onChange} className={`toggle ${checked ? 'is-on' : ''} ${connecting ? 'is-connecting' : ''}`}><span /></button>;
@@ -189,6 +198,7 @@ function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, dr
         const view = await api.getJob(jobId);
         if (stopped) return;
         setJob(view);
+        setBatchProgress(isFinished(view.status) ? null : { label: type === 'video' ? 'Video' : 'Voice', done: view.progress.done + view.progress.failed, total: view.progress.total });
         if (view.status === 'cancelled') { setPaused(true); return; } // stopped by the heartbeat guard: wait for Resume
         if (isFinished(view.status)) { finish(view); return; }
       } catch (error) {
@@ -198,7 +208,7 @@ function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, dr
       timer = window.setTimeout(poll, 3000);
     };
     poll();
-    return () => { stopped = true; window.clearTimeout(timer); };
+    return () => { stopped = true; window.clearTimeout(timer); setBatchProgress(null); };
   }, [jobId, storeKey, paused]);
   // GPU worker went silent in the middle of a job: stop the queue now and keep the finished scenes.
   useEffect(() => {
@@ -331,7 +341,7 @@ export default function Home() {
   const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: t.voiceLibrary, video: t.videoEngine, kh: t.khEngine, en: t.enEngine, timeline: 'Timeline Editor', image: 'Image Engine', history: t.history };
   const tabIdx = menuOpen ? 0 : -1;
 
-  return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button><h1 className="top-title">{tabLabel[activeTab] ?? ''}</h1></header>
+  return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button><h1 className="top-title">{tabLabel[activeTab] ?? ''}</h1></header><BatchBanner />
     <div className={`side-overlay ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
     <aside className={`side-drawer ${menuOpen ? 'open' : ''}`} aria-label="Navigation" aria-hidden={!menuOpen}>
       <div className="side-head"><Brand t={t} /><button type="button" className="icon-button" onClick={() => setMenuOpen(false)} aria-label={t.close ?? 'Close'}><X size={20} /></button></div>

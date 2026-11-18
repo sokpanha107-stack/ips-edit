@@ -300,3 +300,7 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .section-heading { display:none; }
 .screen-heading:has(> .section-heading:only-child) { display:none; }
 .screen-heading { padding-bottom:6px; }
+
+.batch-banner{position:sticky;top:0;z-index:40;padding:8px 16px 10px;background:var(--amber);color:#2a1a00;font-size:13px;font-weight:600}
+.batch-track{margin-top:6px;height:5px;border-radius:99px;background:rgba(0,0,0,.18);overflow:hidden}
+.batch-track i{display:block;height:100%;background:#2a1a00;transition:width .4s}

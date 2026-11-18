@@ -76,7 +76,10 @@ export async function applyResult(ctx: Ctx, jobId: string, scene: Scene, result:
  * Move a job forward one step: poll running scenes, then submit queued ones up to the parallel limit.
  * Safe to call from the browser poll, a webhook, or a cron at the same time.
  */
+const TICK_BUDGET_MS = 35_000;
+
 export async function tick(ctx: Ctx, jobId: string): Promise<Job | null> {
+  const startedAt = Date.now();
   const store = getStore(ctx.db, ctx.userId);
   let job = await store.getJob(jobId);
   if (!job) return null;
@@ -105,6 +108,12 @@ export async function tick(ctx: Ctx, jobId: string): Promise<Job | null> {
     try {
       const sent = await provider.submit(await pj(job), { ...scene, attempts: scene.attempts + 1 }, { webhookUrl: webhookUrl(job, scene), user: ctx });
       await store.updateScene(jobId, scene.idx, { externalId: sent.externalId, meta: sent.meta ?? null, error: null });
+      if (job.provider === 'gtts') {   // synchronous provider: finish this scene now so the next one starts right away (one by one)
+        const fresh = (await store.getJob(jobId))?.scenes.find((x) => x.idx === scene.idx);
+        if (fresh) await applyResult(ctx, jobId, fresh, await provider.poll(await pj(job), fresh));
+        running -= 1;
+        if (Date.now() - startedAt > TICK_BUDGET_MS) break;   // the browser's next poll continues where this stopped
+      }
     } catch (err) {
       running -= 1;
       await applyResult(ctx, jobId, { ...scene, attempts: scene.attempts + 1 }, { status: 'failed', error: err instanceof Error ? err.message : String(err) });

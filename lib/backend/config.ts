@@ -11,9 +11,9 @@ export const config = {
     const vercel = env('VERCEL_PROJECT_PRODUCTION_URL') || env('VERCEL_URL');
     return vercel ? `https://${vercel}` : '';
   },
-  maxScenes: () => Number(env('MAX_SCENES')) || 60,
+  maxScenes: () => Number(env('MAX_SCENES')) || 100,
   /** How many scenes may run at the same time on the provider. */
-  maxParallel: () => Number(env('MAX_PARALLEL')) || 6,
+  maxParallel: () => Number(env('MAX_PARALLEL')) || 1,
   supabaseUrl: () => env('SUPABASE_URL') || env('NEXT_PUBLIC_SUPABASE_URL'),
   supabaseServiceKey: () => env('SUPABASE_SERVICE_ROLE_KEY'),
   /** Secret that encrypts the users' API keys at rest (AES-256-GCM). Generate: openssl rand -base64 32 */
