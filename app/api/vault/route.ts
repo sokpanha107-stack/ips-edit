@@ -32,6 +32,7 @@ export async function PUT(req: Request) {
     await recordStatus(au.ctx.db, au.ctx.userId, service, result.ok);
     return NextResponse.json({ ok: result.ok, message: result.message, services: await listVault(au.ctx.db) });
   } catch (e) {
+    if (e instanceof Error && /api_keys_service_name_check/.test(e.message)) return NextResponse.json({ ok: false, message: 'Database needs a one-time update: run supabase/fix-api-keys-constraint.sql in Supabase → SQL Editor, then save again.' }, { status: 400 });
     return NextResponse.json({ ok: false, message: e instanceof Error ? e.message : 'failed' }, { status: 400 });
   }
 }

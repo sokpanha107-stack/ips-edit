@@ -48,7 +48,7 @@ create table if not exists public.prompt_vault (
 create table if not exists public.api_keys (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  service_name    text not null check (service_name in ('runpod','voice_api','gemini')),
+  service_name    text not null check (service_name ~ '^[a-z_]{2,40}$'),   -- which services are allowed is enforced by the server, so new ones never need a migration
   key_cipher      text not null,
   key_hint        text not null default '',
   endpoint        text,
@@ -115,9 +115,9 @@ drop trigger if exists documents_same_owner_trg on public.documents;
 create trigger documents_same_owner_trg before insert or update of parent_id, user_id on public.documents
   for each row execute function public.documents_same_owner();
 
--- Existing projects: allow the new 'gemini' service in the vault.
+-- Existing projects: replace the old fixed list with a format-only check (the server validates the service name).
 alter table public.api_keys drop constraint if exists api_keys_service_name_check;
-alter table public.api_keys add constraint api_keys_service_name_check check (service_name in ('runpod','voice_api','gemini'));
+alter table public.api_keys add constraint api_keys_service_name_check check (service_name ~ '^[a-z_]{2,40}$');
 
 -- ── 2. Row Level Security: owner-only on EVERY table ─────────────────
 do $$
