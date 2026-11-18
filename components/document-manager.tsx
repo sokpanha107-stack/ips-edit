@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import JSZip from 'jszip';
-import { Archive, ArrowLeft, Check, CheckSquare, ChevronRight, DownloadCloud, File as FileIcon, FileArchive, FileAudio, FileVideo, Folder, FolderPlus, ImageIcon, Loader2, Share2, Clapperboard, Trash2, Upload, X } from 'lucide-react';
+import { Archive, ArrowLeft, Check, CheckSquare, ChevronRight, DownloadCloud, File as FileIcon, FileArchive, FileAudio, FileVideo, Folder, FolderPlus, ImageIcon, LayoutGrid, List, Loader2, MoreVertical, Plus, Share2, Clapperboard, Trash2, Upload, X } from 'lucide-react';
 import { browserClient } from '@/lib/supabase/browser';
 import { naturalCompare, sortByName } from '@/lib/client/natural';
 import { useLongPress } from '@/hooks/use-long-press';
@@ -15,36 +15,42 @@ const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const safe = (n: string) => n.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120) || 'file';
 
-function iconFor(d: Doc) {
-  if (d.kind === 'folder') return <Folder size={20} className="text-[var(--amber-deep)]" />;
-  if (d.kind === 'zip') return <FileArchive size={20} className="text-violet-700" />;
-  if (d.mime?.startsWith('image/')) return <ImageIcon size={20} className="text-sky-700" />;
-  if (d.mime?.startsWith('audio/')) return <FileAudio size={20} className="text-emerald-700" />;
-  if (d.mime?.startsWith('video/')) return <FileVideo size={20} className="text-rose-700" />;
-  return <FileIcon size={20} className="text-[var(--ink-soft)]" />;
+function iconFor(d: Doc, size = 20) {
+  if (d.kind === 'folder') return <Folder size={size} className="text-[var(--amber-deep)]" fill="currentColor" fillOpacity={0.18} />;
+  if (d.kind === 'zip') return <FileArchive size={size} className="text-violet-700" />;
+  if (d.mime?.startsWith('image/')) return <ImageIcon size={size} className="text-sky-700" />;
+  if (d.mime?.startsWith('audio/')) return <FileAudio size={size} className="text-emerald-700" />;
+  if (d.mime?.startsWith('video/')) return <FileVideo size={size} className="text-rose-700" />;
+  return <FileIcon size={size} className="text-[var(--ink-soft)]" />;
 }
 
-
-interface RowProps { d: Doc; selecting: boolean; selected: boolean; busy: boolean; confirming: boolean; onToggle: () => void; onLong: () => void; onOpen: () => void; onExtract: () => void; onArchive: () => void; onAskDelete: () => void; onDelete: () => void; onCancelDelete: () => void }
-/** One file/folder row. Long press (or the Select button) starts selection; tap toggles while selecting. */
-function DocRow({ d, selecting, selected, busy, confirming, onToggle, onLong, onOpen, onExtract, onArchive, onAskDelete, onDelete, onCancelDelete }: RowProps) {
+interface ItemProps { d: Doc; view: 'grid' | 'list'; thumb?: string; selecting: boolean; selected: boolean; onToggle: () => void; onLong: () => void; onOpen: () => void; onMenu: () => void }
+/** One file/folder as a grid tile or a flat list row. Long press (or Select) starts selection; tap toggles while selecting. */
+function DocItem({ d, view, thumb, selecting, selected, onToggle, onLong, onOpen, onMenu }: ItemProps) {
   const lp = useLongPress(onLong);
-  return <li className={`flex select-none items-center gap-3 px-5 py-3 [-webkit-touch-callout:none] ${selected ? 'bg-amber-500/15' : 'hover:bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]'}`}>
-    {selecting && <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${selected ? 'border-amber-600 bg-amber-500 text-zinc-950' : 'border-[var(--ink-soft)]'}`}>{selected && <Check size={13} strokeWidth={3} />}</span>}
-    <button type="button" {...lp.props} className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => { if (lp.consumed()) return; if (selecting) onToggle(); else onOpen(); }}>
-      {iconFor(d)}
+  const tap = () => { if (lp.consumed()) return; if (selecting) onToggle(); else onOpen(); };
+  const check = selecting && <span className={`absolute left-1.5 top-1.5 z-10 grid h-5 w-5 place-items-center rounded-full border ${selected ? 'border-amber-600 bg-amber-500 text-zinc-950' : 'border-[var(--ink-soft)] bg-[var(--paper)]/80'}`}>{selected && <Check size={12} strokeWidth={3} />}</span>;
+  if (view === 'grid') {
+    return <li className={`relative select-none rounded-xl p-1.5 [-webkit-touch-callout:none] ${selected ? 'bg-amber-500/20' : ''}`}>
+      {check}
+      <button type="button" {...lp.props} onClick={tap} className="block w-full text-center">
+        <span className="mx-auto grid aspect-square w-full place-items-center overflow-hidden rounded-xl bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]">
+          {thumb ? <img src={thumb} alt="" loading="lazy" draggable={false} className="h-full w-full object-cover" /> : iconFor(d, 40)}
+        </span>
+        <span className="mt-1.5 block truncate text-xs font-medium">{d.name}</span>
+        <span className="block truncate text-[10px] text-[var(--ink-soft)]">{d.size_bytes ? fmtSize(d.size_bytes) : fmtDate(d.created_at)}</span>
+      </button>
+      {!selecting && <button type="button" onClick={onMenu} className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-[var(--paper)]/80 text-[var(--ink-soft)]" aria-label="More"><MoreVertical size={15} /></button>}
+    </li>;
+  }
+  return <li className={`relative flex select-none items-center gap-3 px-4 py-2.5 [-webkit-touch-callout:none] ${selected ? 'bg-amber-500/15' : ''}`}>
+    {selecting && <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${selected ? 'border-amber-600 bg-amber-500 text-zinc-950' : 'border-[var(--ink-soft)]'}`}>{selected && <Check size={12} strokeWidth={3} />}</span>}
+    <button type="button" {...lp.props} className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={tap}>
+      <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]">{thumb ? <img src={thumb} alt="" loading="lazy" draggable={false} className="h-full w-full object-cover" /> : iconFor(d, 22)}</span>
       <span className="min-w-0"><span className="block truncate text-sm font-medium">{d.name}</span>
-        <span className="block text-[11px] text-[var(--ink-soft)]">{fmtDate(d.created_at)}{d.size_bytes ? ` · ${fmtSize(d.size_bytes)}` : ''}{d.source && d.source !== 'upload' ? ` · ${d.source}` : ''}</span></span>
+        <span className="block text-[11px] text-[var(--ink-soft)]">{fmtDate(d.created_at)}{d.size_bytes ? ` · ${fmtSize(d.size_bytes)}` : ''}</span></span>
     </button>
-    {!selecting && <>
-      {d.kind === 'folder' && <>
-        <button type="button" onClick={onExtract} disabled={busy} className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-[var(--amber-deep)] hover:bg-amber-500/20 disabled:opacity-50"><DownloadCloud size={14} /><span className="hidden sm:inline">Extract to ZIP</span></button>
-        <button type="button" onClick={onArchive} disabled={busy} className="rounded-lg p-2 text-[var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)] hover:text-[var(--ink)] disabled:opacity-50" aria-label="Save ZIP in cloud" title="Save a ZIP copy in the cloud"><Archive size={16} /></button>
-      </>}
-      {confirming
-        ? <span className="flex items-center gap-1"><button type="button" onClick={onDelete} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white">Delete</button><button type="button" onClick={onCancelDelete} className="px-2 text-xs text-[var(--ink-soft)]">No</button></span>
-        : <button type="button" onClick={onAskDelete} className="rounded-lg p-2 text-[var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)] hover:text-red-600" aria-label="Delete"><Trash2 size={16} /></button>}
-    </>}
+    {!selecting && <button type="button" onClick={onMenu} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--ink-soft)]" aria-label="More"><MoreVertical size={17} /></button>}
   </li>;
 }
 
@@ -63,6 +69,12 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [ready, setReady] = useState<File[] | null>(null);   // prepared for the native share sheet
   const cwd = trail[trail.length - 1];
+  const [view, setViewState] = useState<'grid' | 'list'>('grid');
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [menu, setMenu] = useState<Doc | null>(null);
+  const [plus, setPlus] = useState(false);
+  useEffect(() => { try { if (window.localStorage.getItem('ips-doc-view') === 'list') setViewState('list'); } catch { /* storage unavailable */ } }, []);
+  const setView = (v: 'grid' | 'list') => { setViewState(v); try { window.localStorage.setItem('ips-doc-view', v); } catch { /* storage unavailable */ } };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -209,38 +221,82 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
   };
 
   const shown = items.filter((d) => filter === 'all' || d.kind === filter);
+  const allPicked = shown.length > 0 && shown.every((d) => picked.has(d.id));
+  const toggleAll = () => setPicked(allPicked ? new Set() : new Set(shown.map((d) => d.id)));
 
-  return <section className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] shadow-[0_18px_50px_rgba(30,41,59,.12)]">
-    <header className="flex flex-wrap items-center justify-end gap-2 border-b border-[var(--line)] px-5 py-3">
-      <button type="button" onClick={() => (selecting ? exitSelect() : setSelecting(true))} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${selecting ? 'border-amber-600 bg-amber-500/15 text-[var(--amber-deep)]' : 'border-[var(--line)] text-[var(--ink)] hover:border-[var(--amber-deep)]'}`}><CheckSquare size={14} /> {selecting ? 'Done' : 'Select'}</button>
-      <button type="button" onClick={() => setNewName('')} className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 py-2 text-xs font-semibold text-[var(--ink)] hover:border-[var(--amber-deep)]"><FolderPlus size={14} /> New folder</button>
-      <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-zinc-950 hover:bg-amber-400"><Upload size={14} /> Upload</button>
+  // Image thumbnails: signed URLs for the images in this folder (first 80).
+  useEffect(() => {
+    const imgs = items.filter((d) => d.storage_path && d.mime?.startsWith('image/')).slice(0, 80);
+    if (!imgs.length) { setThumbs({}); return; }
+    let live = true;
+    void sb.storage.from(BUCKET).createSignedUrls(imgs.map((d) => d.storage_path!), 900).then(({ data }) => {
+      if (!live || !data) return;
+      const m: Record<string, string> = {};
+      data.forEach((r, i) => { if (r.signedUrl) m[imgs[i].id] = r.signedUrl; });
+      setThumbs(m);
+    });
+    return () => { live = false; };
+  }, [items, sb]);
+
+  const iconBtn = 'grid h-9 w-9 place-items-center rounded-full text-[var(--ink)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)]';
+  return <section className="doc-bleed w-full text-[var(--ink)]">
+    <header className="relative flex items-center gap-1 px-3 py-2">
+      <div className="flex min-w-0 flex-1 items-center gap-1 text-sm">
+        {trail.length > 1 && <button type="button" onClick={() => setTrail((t) => t.slice(0, -1))} className={iconBtn} aria-label="Back"><ArrowLeft size={18} /></button>}
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap">
+          {trail.map((c, i) => <span key={`${c.id}-${i}`} className="flex items-center gap-1 text-[var(--ink-soft)]">{i > 0 && <ChevronRight size={13} />}<button type="button" onClick={() => setTrail((t) => t.slice(0, i + 1))} className={i === trail.length - 1 ? 'font-semibold text-[var(--ink)]' : ''}>{c.name}</button></span>)}
+        </div>
+      </div>
+      {selecting
+        ? <><span className="text-xs font-semibold text-[var(--ink-soft)]">{picked.size}</span>
+            <button type="button" onClick={toggleAll} className="rounded-full px-3 py-1.5 text-xs font-bold text-[var(--amber-deep)]">{allPicked ? 'Clear' : 'Select all'}</button>
+            <button type="button" onClick={exitSelect} className={iconBtn} aria-label="Done"><X size={18} /></button></>
+        : <>
+            <button type="button" onClick={() => setView(view === 'grid' ? 'list' : 'grid')} className={iconBtn} aria-label={view === 'grid' ? 'List view' : 'Grid view'}>{view === 'grid' ? <List size={18} /> : <LayoutGrid size={18} />}</button>
+            <button type="button" onClick={() => setSelecting(true)} className={iconBtn} aria-label="Select"><CheckSquare size={18} /></button>
+            <button type="button" onClick={() => setPlus((v) => !v)} className="grid h-9 w-9 place-items-center rounded-full bg-amber-500 text-zinc-950" aria-label="Add" aria-expanded={plus}><Plus size={19} strokeWidth={2.6} /></button>
+          </>}
+      {plus && <><div className="fixed inset-0 z-20" onClick={() => setPlus(false)} />
+        <div className="absolute right-3 top-12 z-30 w-44 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)] text-sm shadow-[0_12px_30px_rgba(30,41,59,.25)]">
+          <button type="button" className="flex w-full items-center gap-2 px-4 py-3 text-left" onClick={() => { setPlus(false); setNewName(''); }}><FolderPlus size={16} /> New folder</button>
+          <button type="button" className="flex w-full items-center gap-2 border-t border-[var(--line)] px-4 py-3 text-left" onClick={() => { setPlus(false); fileRef.current?.click(); }}><Upload size={16} /> Upload files</button>
+        </div></>}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
     </header>
 
-    <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] px-5 py-2.5 text-sm">
-      {trail.length > 1 && <button type="button" onClick={() => setTrail((t) => t.slice(0, -1))} className="rounded-md p-1 text-[var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)]" aria-label="Back"><ArrowLeft size={16} /></button>}
-      {trail.map((c, i) => <span key={`${c.id}-${i}`} className="flex items-center gap-1 text-[var(--ink-soft)]">{i > 0 && <ChevronRight size={13} />}<button type="button" onClick={() => setTrail((t) => t.slice(0, i + 1))} className={i === trail.length - 1 ? 'font-semibold text-[var(--ink)]' : 'hover:text-[var(--ink)]'}>{c.name}</button></span>)}
-      <div className="ml-auto flex gap-1 rounded-lg border border-[var(--line)] p-0.5 text-xs">
-        {([['all', 'All'], ['folder', 'Projects'], ['zip', 'ZIPs']] as [Filter, string][]).map(([k, l]) => <button key={k} type="button" onClick={() => setFilter(k)} className={`rounded-md px-2.5 py-1 ${filter === k ? 'bg-[color-mix(in_srgb,var(--ink)_12%,transparent)] text-[var(--ink)]' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'}`}>{l}</button>)}
-      </div>
+    <div className="flex gap-1 px-3 pb-2 text-xs">
+      {([['all', 'All'], ['folder', 'Projects'], ['zip', 'ZIPs']] as [Filter, string][]).map(([k, l]) => <button key={k} type="button" onClick={() => setFilter(k)} className={`rounded-full px-3 py-1 ${filter === k ? 'bg-[color-mix(in_srgb,var(--ink)_12%,transparent)] font-semibold text-[var(--ink)]' : 'text-[var(--ink-soft)]'}`}>{l}</button>)}
     </div>
 
-    {busy && <div className="flex items-center gap-2 border-b border-sky-500/20 bg-sky-500/10 px-5 py-2 text-xs text-sky-700"><Loader2 size={14} className="animate-spin" /> {busy}</div>}
-    {newName !== null && <form className="flex gap-2 border-b border-[var(--line)] px-5 py-3" onSubmit={(e) => { e.preventDefault(); void createFolder(); }}>
+    {busy && <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-sky-500/10 px-3 py-2 text-xs text-sky-700"><Loader2 size={14} className="animate-spin" /> {busy}</div>}
+    {newName !== null && <form className="flex gap-2 px-3 pb-3" onSubmit={(e) => { e.preventDefault(); void createFolder(); }}>
       <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={100} placeholder="Folder name" className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] px-3 py-2 text-sm outline-none focus:border-amber-500/60" />
       <button type="submit" className="rounded-lg bg-amber-500 px-4 text-sm font-bold text-zinc-950">Create</button>
-      <button type="button" onClick={() => setNewName(null)} className="rounded-lg px-3 text-sm text-[var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)]">Cancel</button>
+      <button type="button" onClick={() => setNewName(null)} className="rounded-lg px-3 text-sm text-[var(--ink-soft)]">Cancel</button>
     </form>}
 
-    <ul className={`${selecting ? "pb-32 " : ""}max-h-[calc(100dvh-250px)] min-h-[260px] divide-y divide-[var(--line)] overflow-y-auto`}>
-      {loading && <li className="p-8 text-center text-sm text-[var(--ink-soft)]">Loading…</li>}
-      {!loading && !shown.length && <li className="p-10 text-center text-sm text-[var(--ink-soft)]">Nothing here yet. Finished image, voice and video jobs appear as folders automatically.</li>}
-      {shown.map((d) => <DocRow key={d.id} d={d} selecting={selecting} selected={picked.has(d.id)} busy={!!busy} confirming={confirm === d.id}
-        onToggle={() => toggle(d.id)} onLong={() => beginSelect(d.id)}
-        onOpen={() => (d.kind === 'folder' ? setTrail((t) => [...t, { id: d.id, name: d.name }]) : void openFile(d))}
-        onExtract={() => void extract(d)} onArchive={() => void archiveToCloud(d)} onAskDelete={() => setConfirm(d.id)} onDelete={() => void remove(d)} onCancelDelete={() => setConfirm(null)} />)}
+    <ul className={`${selecting ? 'pb-32 ' : 'pb-6 '}min-h-[260px] ${view === 'grid' ? 'grid grid-cols-3 gap-1 px-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7' : 'divide-y divide-[var(--line)]'}`}>
+      {loading && <li className="col-span-full p-8 text-center text-sm text-[var(--ink-soft)]">Loading…</li>}
+      {!loading && !shown.length && <li className="col-span-full p-10 text-center text-sm text-[var(--ink-soft)]">Nothing here yet. Finished image, voice and video jobs appear as folders automatically.</li>}
+      {shown.map((d) => <DocItem key={d.id} d={d} view={view} thumb={thumbs[d.id]} selecting={selecting} selected={picked.has(d.id)}
+        onToggle={() => toggle(d.id)} onLong={() => beginSelect(d.id)} onMenu={() => { setConfirm(null); setMenu(d); }}
+        onOpen={() => (d.kind === 'folder' ? setTrail((t) => [...t, { id: d.id, name: d.name }]) : void openFile(d))} />)}
     </ul>
+
+    {menu && <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30" onClick={() => setMenu(null)}>
+      <div className="w-full max-w-md rounded-t-2xl bg-[var(--paper)] p-3 pb-[calc(12px+env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(30,41,59,.3)]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-2 py-2">{iconFor(menu, 22)}<span className="truncate text-sm font-semibold">{menu.name}</span></div>
+        {menu.kind === 'folder' && <>
+          <button type="button" disabled={!!busy} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm" onClick={() => { const d = menu; setMenu(null); void extract(d); }}><DownloadCloud size={18} /> Extract to ZIP (save on device)</button>
+          <button type="button" disabled={!!busy} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm" onClick={() => { const d = menu; setMenu(null); void archiveToCloud(d); }}><Archive size={18} /> Save ZIP to cloud</button>
+        </>}
+        <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm" onClick={() => { const d = menu; setMenu(null); beginSelect(d.id); }}><CheckSquare size={18} /> Select</button>
+        {confirm === menu.id
+          ? <div className="flex gap-2 px-1 pt-1"><button type="button" onClick={() => { const d = menu; setMenu(null); void remove(d); }} className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-bold text-white">Confirm delete</button><button type="button" onClick={() => setConfirm(null)} className="rounded-xl px-4 py-3 text-sm text-[var(--ink-soft)]">Cancel</button></div>
+          : <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-red-600" onClick={() => setConfirm(menu.id)}><Trash2 size={18} /> Delete</button>}
+      </div>
+    </div>}
+
     {selecting && <div className="fixed inset-x-3 bottom-3 z-30 mx-auto max-w-xl rounded-2xl border border-[var(--line)] bg-[var(--paper)] px-4 py-3 shadow-[0_12px_40px_rgba(30,41,59,.28)]">
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-auto text-xs font-semibold text-[var(--ink-soft)]">{picked.size} selected</span>
