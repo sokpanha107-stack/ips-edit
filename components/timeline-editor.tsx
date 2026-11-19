@@ -28,15 +28,16 @@ function Zone({ title, hint, icon: Icon, kind, accept, assets, onFiles, onRemove
   return <div className={`tl-zone ${over ? 'over' : ''}`}
     onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
     onDrop={async (e) => { e.preventDefault(); setOver(false); onFiles(kind, await readDropped(e.dataTransfer)); }}>
-    <div className="tl-zone-head"><Icon size={18} /><div><strong>{title}</strong><span>{hint}</span></div></div>
-    <div className="tl-zone-btns">
-      <button type="button" className="text-button" onClick={() => filesRef.current?.click()}><Upload size={13} /> Files</button>
-      <button type="button" className="text-button" onClick={() => folderRef.current?.click()}><FolderOpen size={13} /> Folder</button>
+    <div className="tl-zone-row">
+      <div className="tl-zone-head"><Icon size={18} /><div><strong>{title}</strong><span>{hint}</span></div></div>
+      <div className="tl-zone-btns">
+        <button type="button" className="tl-pill" onClick={() => filesRef.current?.click()}><Upload size={16} /> Files</button>
+        <button type="button" className="tl-pill" onClick={() => folderRef.current?.click()}><FolderOpen size={16} /> Folder</button>
+      </div>
     </div>
     <input ref={filesRef} type="file" accept={accept} multiple hidden onChange={(e) => { onFiles(kind, Array.from(e.target.files ?? [])); e.target.value = ''; }} />
     <input ref={folderRef} type="file" multiple hidden {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} onChange={(e) => { onFiles(kind, Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-    {mine.length === 0 ? <p className="tl-drop-note">Drop files or a whole folder here</p>
-      : <ul className="tl-assets">{mine.map((a) => <li key={a.id}>{a.type === 'image' ? <img src={a.url} alt="" /> : <span className="tl-ico">{a.type === 'video' ? '▶' : '♪'}</span>}<em>{a.name}</em><small>{a.type === 'image' ? '' : `${a.duration.toFixed(1)}s`}</small>
+    {mine.length > 0 && <ul className="tl-assets">{mine.map((a) => <li key={a.id}>{a.type === 'image' ? <img src={a.url} alt="" /> : <span className="tl-ico">{a.type === 'video' ? '▶' : '♪'}</span>}<em>{a.name}</em><small>{a.type === 'image' ? '' : `${a.duration.toFixed(1)}s`}</small>
         <button type="button" onClick={() => onRemove(a.id)} aria-label="Remove"><X size={12} /></button></li>)}</ul>}
   </div>;
 }
@@ -293,7 +294,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     <div className="tl-bin">
       <Zone title="Video & Image" hint="clips, stills, generated scenes" icon={ImageIcon} kind="visual" accept="image/*,video/*" assets={assets} onFiles={addFiles} onRemove={removeAsset} />
       <Zone title="Voiceover" hint="TTS files / scene folders" icon={Mic2} kind="voice" accept="audio/*" assets={assets} onFiles={addFiles} onRemove={removeAsset} />
-      <Zone title="Music / SFX" hint="background audio" icon={Music2} kind="music" accept="audio/*" assets={assets} onFiles={addFiles} onRemove={removeAsset} />
+      <Zone title="Music / SFX" hint="optional bgm (auto-SFX built-in)" icon={Music2} kind="music" accept="audio/*" assets={assets} onFiles={addFiles} onRemove={removeAsset} />
     </div>
 
     <label className="tl-check tl-duck"><input type="checkbox" checked={fx.autoDuck} onChange={(e) => setFxK('autoDuck', e.target.checked)} /> Auto-Duck Music (15%) — music drops while the voice speaks, rises in pauses</label>

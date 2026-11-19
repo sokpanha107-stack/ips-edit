@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUp, Loader2, Mic, MicOff, Plus, Sparkles, Volume2, VolumeX, X, AlertTriangle } from 'lucide-react';
+import { ArrowUp, Loader2, Mic, MicOff, Plus, Volume2, VolumeX, X, AlertTriangle } from 'lucide-react';
 import { LogoMark } from '@/components/atom-logo';
 
 type Msg = { role: 'user' | 'model'; text: string; image?: string };
@@ -10,7 +10,7 @@ type Lang = 'kh' | 'en';
 
 const T = {
   kh: {
-    short: 'សួរ AI',
+    short: 'AI',
     ask: 'សួរ AI អំពីអេក្រង់នេះ ឬ App ទាំងមូល…', title: 'Atom Assistant', ph: 'សួរ Atom Assistant...', send: 'ផ្ញើ', mic: 'និយាយ', listening: 'កំពុងស្តាប់…', image: 'ផ្ញើរូប',
     noKey: 'សូមដាក់ Gemini key ក្នុង Settings → API Key Vault សិន។', thinking: 'កំពុងគិត…', listen: 'ស្តាប់ចម្លើយ', stop: 'បញ្ឈប់', noSpeech: 'ឧបករណ៍នេះមិនគាំទ្រការនិយាយទេ',
     noTts: 'ឧបករណ៍នេះគ្មានសំឡេងអានភាសាខ្មែរ។ សូមដំឡើង Khmer voice ក្នុង Settings របស់ទូរស័ព្ទ។', usage: 'ការប្រើប្រាស់ថ្ងៃនេះ', close: 'បិទ', ok: 'យល់ព្រម',
@@ -18,7 +18,7 @@ const T = {
     quota: (p: number, pct: number) => `ការប្រើប្រាស់ AI របស់អ្នកបានដល់កម្រិតកំណត់សុវត្ថិភាព (${pct}%) ហើយ! ប្រព័ន្ធបានផ្អាកជាបណ្ដោះអាសន្ន ដើម្បីការពារការចំណាយលើសកំណត់។ (បានប្រើ ${p}%) សូមព្យាយាមម្តងទៀតថ្ងៃស្អែក។`,
   },
   en: {
-    short: 'Ask AI',
+    short: 'AI',
     ask: 'Ask AI about this screen or the whole app…', title: 'Atom Assistant', ph: 'Ask Atom Assistant...', send: 'Send', mic: 'Speak', listening: 'Listening…', image: 'Attach image',
     noKey: 'Add your Gemini key in Settings → API Key Vault first.', thinking: 'Thinking…', listen: 'Read aloud', stop: 'Stop', noSpeech: 'Speech input is not supported on this device',
     noTts: 'This device has no voice for this language. Install one in your phone settings.', usage: "Today's usage", close: 'Close', ok: 'OK',
@@ -110,7 +110,7 @@ export function AiAssistant({ screen, language }: { screen: string; language: La
   const pick = async (f?: File) => { if (!f) return; try { setImg(await toDataUrl(f)); } catch { setErr('Could not read the image'); } };
 
   return <>
-    <button type="button" className="ai-bar" onClick={() => setOpen(true)} aria-label={t.title}><Sparkles size={16} /><span>{t.short}</span></button>
+    <button type="button" className="ai-bar" onClick={() => setOpen(true)} aria-label={t.title}><LogoMark size={20} /><span>{t.short}</span></button>
     {mounted && createPortal(<>{open && <div className="ai-sheet" role="dialog" aria-label={t.title}>
       <div className="ai-head"><LogoMark size={28} /><strong>{t.title}</strong>
         {pct !== null && <span className="ai-meter" title={t.usage}><i style={{ width: `${Math.min(100, pct)}%` }} /></span>}

@@ -431,3 +431,9 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 
 .ai-pill{border-radius:26px}
 .ai-pill .ai-field{border:0!important;box-shadow:none!important;outline:0!important;background:transparent!important;border-radius:0;padding:8px 4px;min-height:38px}
+.tl-zone-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tl-zone-row .tl-zone-head{min-width:0;flex:1}
+.tl-zone-btns{flex:none;display:flex;gap:8px}
+.tl-pill{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;min-height:40px;border-radius:999px;font-size:14px;font-weight:500;color:var(--amber-deep);border:1px solid color-mix(in srgb,var(--amber) 55%,transparent);background:color-mix(in srgb,var(--amber) 12%,transparent)}
+.tl-pill:active{background:color-mix(in srgb,var(--amber) 26%,transparent)}
+@media (max-width:420px){.tl-pill{padding:8px 11px}}
