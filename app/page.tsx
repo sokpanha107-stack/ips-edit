@@ -2,7 +2,7 @@
 
 import { AiAssistant } from '@/components/ai-assistant';
 import { AboutPanel } from '@/components/about-panel';
-import { podPowerOff, podPowerOn } from '@/lib/client/pod';
+import { podAcquire, podRelease } from '@/lib/client/pod';
 import { setBatchProgress, useBatchProgress } from '@/lib/client/progress';
 import { useEffect, useRef, useState } from 'react';
 import { RefBar, OptionsPanel, useEngineConfig, cropToAspect, type EngineOpts, type RefImage } from '@/components/engine-kit';
@@ -16,7 +16,7 @@ import { PromptLibrary } from '@/components/prompt-library';
 import { CommandCenter } from '@/components/command-center';
 import { useHeartbeat } from '@/lib/client/heartbeat';
 import { addVoice, blobToDataUrl, deleteVoices as dbDeleteVoices, fmtLen, getVoiceBlob, listVoices, type VoiceMeta } from '@/lib/client/voiceStore';
-import { api, isFinished, splitScenes, type JobView, type VaultService } from '@/lib/client/api';
+import { api, getVideoEndpoint, isFinished, splitScenes, type JobView, type VaultService } from '@/lib/client/api';
 import { AccountPanel } from '@/components/account-panel';
 import { ApiKeyVault } from '@/components/api-key-vault';
 import { DocumentManager } from '@/components/document-manager';
@@ -181,7 +181,7 @@ function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, dr
       } catch { /* leave the previous anchor untouched */ }
     };
     const finish = (view: JobView) => {
-      if (type === 'video') void podPowerOff();
+      if (type === 'video') void podRelease('video');
       setIsProcessing(false);
       setJobId(null);
       try { window.localStorage.removeItem(storeKey); } catch { /* storage unavailable */ }
@@ -227,7 +227,7 @@ function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, dr
       const scenes = parsed.length ? parsed : useAudio ? audio.map(() => '') : [''];
       let sample: string | undefined;
       if (!isVideo && voiceProfile) { const b = await getVoiceBlob(voiceProfile.id); if (b) sample = await blobToDataUrl(b); }
-      if (type === 'video') await podPowerOn();
+      if (type === 'video') await podAcquire('video', getVideoEndpoint().url, (m) => { if (m) noticeRef.current(m); });
       const created = await api.createJob({
         engine: type, folder: draft.folder.trim(), masterPrompt: draft.prompt.trim(), scenes,
         imageDataUrl: isVideo && image ? await cropToAspect(image.url, opts?.aspect ?? '9:16') : undefined, voiceId: voiceProfile?.name,
@@ -238,6 +238,7 @@ function EngineWorkspace({ blocked, type, t, language, anchor = [], onAnchor, dr
       setJob(created); setJobId(created.id);
     } catch (error) {
       setIsProcessing(false);
+      if (type === 'video') void podRelease('video');
       onNotice(error instanceof Error ? error.message : 'Could not start the job');
     }
   };

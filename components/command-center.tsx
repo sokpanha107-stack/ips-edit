@@ -135,7 +135,7 @@ function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t:
 function PodPanel({ language }: { language: 'en' | 'kh' }) {
   const kh = language === 'kh';
   const [podId, setPodId] = useState('');
-  const [auto, setAuto] = useState(false);
+  const [auto, setAuto] = useState(true);
   const [st, setSt] = useState<PodStatus | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { const p = getPod(); setPodId(p.podId); setAuto(p.auto); }, []);
@@ -166,11 +166,11 @@ function PodPanel({ language }: { language: 'en' | 'kh' }) {
         <button type="button" className="access-test" disabled={busy} onClick={() => void power('start')}>{kh ? 'បើក Pod' : 'Start Pod'}</button>
         <button type="button" className="access-test" disabled={busy} onClick={() => void power('stop')}>{kh ? 'បិទ Pod' : 'Stop Pod'}</button>
       </div>
-      <label className="access-help" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); save(podId, e.target.checked); }} />
-        {kh ? 'បើកស្វ័យប្រវត្តិពេលចាប់ផ្តើមការងារ ហើយបិទពេលចប់' : 'Auto-start when a job begins, auto-stop when it finishes'}
-      </label>
     </>}
+    <label className="access-help" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); save(podId, e.target.checked); }} />
+      {kh ? 'Auto-Start & Auto-Stop GPU: បើក Pod ស្វ័យប្រវត្តិពេល Generate Images / Export Video ហើយបិទភ្លាមពេលចប់' : 'Auto-Start & Auto-Stop GPU: wakes the Pod for Generate Images / Export Video and stops it right after'}
+    </label>
   </section>;
 }
 

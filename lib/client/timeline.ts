@@ -197,7 +197,7 @@ export function startRender(p: { payload: unknown; files: Record<string, File> }
     xhr.open('POST', `${base}/render`);
     for (const [k, v] of Object.entries(headersOf(ep.key))) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) onUpload(Math.round((e.loaded / e.total) * 100)); };
-    xhr.onerror = () => reject(new Error('Cannot reach the render server. Is the Colab cell still running and the URL current?'));
+    xhr.onerror = () => reject(new Error('Cannot reach the render server. Is the RunPod Pod running and the URL current?'));
     xhr.onload = () => {
       let data: { ok?: boolean; id?: string; error?: string } = {};
       try { data = JSON.parse(xhr.responseText); } catch { /* not json */ }

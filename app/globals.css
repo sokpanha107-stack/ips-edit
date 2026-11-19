@@ -412,3 +412,8 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .tl-duck{margin:8px 0}
 .cheat{margin:0 0 8px}.cheat>summary{cursor:pointer;font-size:12px;color:var(--amber-deep);font-weight:700}
 .cheat-list{margin:4px 0 0;padding-left:16px}
+.wm-split{display:flex;align-items:center;flex:1;min-width:0;border-bottom:1.5px solid var(--line);gap:2px}
+.wm-in{flex:1;min-width:0;width:100%;background:transparent;border:0;outline:0;padding:10px 6px;font:inherit;color:var(--ink)}
+.wm-in:disabled{opacity:.6}
+.wm-in:focus{background:color-mix(in srgb,var(--amber) 12%,transparent)}
+.wm-div{flex:none;color:var(--ink-soft);font-weight:700;user-select:none;padding:0 2px}

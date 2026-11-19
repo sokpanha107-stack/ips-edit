@@ -620,6 +620,56 @@ def _worker():
             Q.task_done()
 
 
+# ------------------------------------------------------------------ dead-man's switch (RunPod): stop the Pod when nobody is talking to it
+IDLE_TIMEOUT_SECONDS = 180                 # no API request for 3 minutes => the Pod stops itself (phone offline / app closed mid-job)
+ACTIVITY_FILE = Path(os.environ.get('IPS_ACTIVITY_FILE', '/tmp/ips_last_activity'))   # shared with the Image Engine server on the same Pod
+_INFLIGHT = {'n': 0}
+_STARTED = time.time()
+
+
+def touch_activity():
+    try: ACTIVITY_FILE.touch()
+    except OSError: pass
+
+
+def last_activity() -> float:
+    try: return max(_STARTED, ACTIVITY_FILE.stat().st_mtime)
+    except OSError: return _STARTED
+
+
+def stop_own_pod() -> bool:
+    """Asks RunPod to stop *this* Pod (billing for the GPU ends). Uses the Pod-scoped RUNPOD_API_KEY that RunPod injects; falls back to runpodctl."""
+    pod = os.environ.get('RUNPOD_POD_ID', '')
+    key = os.environ.get('IPS_RUNPOD_API_KEY') or os.environ.get('RUNPOD_API_KEY', '')
+    if not pod: return False
+    try:
+        req = urllib.request.Request(f'https://rest.runpod.io/v1/pods/{pod}/stop', method='POST', headers={'Authorization': f'Bearer {key}'})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            if 200 <= r.status < 300: return True
+    except Exception as e:  # noqa: BLE001
+        print('[watchdog] REST stop failed:', str(e)[:160])
+    try:
+        return subprocess.run(['runpodctl', 'stop', 'pod', pod], capture_output=True, timeout=30).returncode == 0
+    except Exception as e:  # noqa: BLE001
+        print('[watchdog] runpodctl stop failed:', str(e)[:160])
+        return False
+
+
+def _watchdog():
+    """Lightweight timer thread. Only active on a RunPod Pod (RUNPOD_POD_ID set) unless IPS_IDLE_STOP=0."""
+    if not os.environ.get('RUNPOD_POD_ID') or os.environ.get('IPS_IDLE_STOP', '1') == '0':
+        print('[watchdog] idle auto-stop disabled (not on a RunPod Pod, or IPS_IDLE_STOP=0)')
+        return
+    print(f'[watchdog] Pod stops itself after {IDLE_TIMEOUT_SECONDS}s without API requests')
+    while True:
+        time.sleep(10)
+        idle = time.time() - last_activity()
+        if _INFLIGHT['n'] > 0 or idle < IDLE_TIMEOUT_SECONDS: continue       # a request (e.g. a long upload) is still in flight
+        print(f'[watchdog] idle for {int(idle)}s, stopping the Pod')
+        if stop_own_pod(): return
+        time.sleep(60)                                                        # could not stop: try again in a minute
+
+
 # ------------------------------------------------------------------ FastAPI wiring
 def register(app, public_url=lambda: ''):
     """Adds the /render routes (and CORS so the PWA can upload straight from the browser) to an existing FastAPI app."""
@@ -629,7 +679,18 @@ def register(app, public_url=lambda: ''):
 
     OUT.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=_worker, daemon=True).start()
+    threading.Thread(target=_watchdog, daemon=True).start()
+    touch_activity()                                                           # booting counts as activity: a fresh Pod gets the full 3 minutes
     app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
+
+    @app.middleware('http')
+    async def activity(request: Request, call_next):
+        # /health and CORS preflights do not count: an app left open on the Command Center must not keep a GPU running forever
+        counts = request.method != 'OPTIONS' and request.url.path != '/health'
+        if counts: touch_activity(); _INFLIGHT['n'] += 1
+        try: return await call_next(request)
+        finally:
+            if counts: _INFLIGHT['n'] -= 1; touch_activity()
 
     @app.post('/render')
     async def render(request: Request):

@@ -26,7 +26,7 @@ export function WorkflowDiagram() {
     <Arrow x1={266} y1={156} x2={210} y2={196} />
     <Box x={50} y={196} w={260} h={64} title="Batch Processing · up to 100 scenes" sub="one by one · auto-saved · resumes" accent />
     <Arrow x1={180} y1={260} x2={180} y2={298} />
-    <Box x={90} y={298} w={180} h={50} title="RunPod Pod · Render" sub="NVENC · depth · FX · SFX" />
+    <Box x={90} y={298} w={180} h={50} title="RunPod Pod · Render" sub="auto start/stop · NVENC · FX" />
     <Arrow x1={180} y1={348} x2={180} y2={386} />
     <Box x={90} y={386} w={180} h={50} title="Timeline Editor" sub="Master Script · 2.5D · FX · SFX" />
     <Arrow x1={180} y1={436} x2={180} y2={474} />

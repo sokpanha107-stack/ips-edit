@@ -1,6 +1,7 @@
 'use client';
 
-import { api } from '@/lib/client/api';
+import { api, getVideoEndpoint } from '@/lib/client/api';
+import { getPod, podAcquire, podRelease } from '@/lib/client/pod';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Download, FolderOpen, Image as ImageIcon, Lock, Music2, Mic2, Pause, Play, RectangleHorizontal, RectangleVertical, Trash2, Type, Unlock, Upload, Wand2, X } from 'lucide-react';
 import { AutoEditor } from '@/components/auto-editor';
@@ -12,6 +13,7 @@ import {
 
 type Sel = { track: 'visual' | 'voice' | 'sub' | 'music'; id: string } | null;
 type Job = { id: string; base: string; key: string };
+const WM_DIVIDER = ' | ';
 const PREFS = 'ips-tl-prefs';
 
 /* ---------------------------------------------------------------- media bin */
@@ -70,7 +72,11 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const [caption, setCaption] = useState<CaptionStyle>(defaultCaption);
   const [fontAsset, setFontAsset] = useState<File | null>(null);
   const [userFonts, setUserFonts] = useState<string[]>([]);
-  const [watermark, setWatermark] = useState('Atom Edit');
+  const [wmLeft, setWmLeft] = useState('Atom');      // the divider " | " between the two inputs is fixed in code (WM_DIVIDER)
+  const [wmRight, setWmRight] = useState('Feel');
+  const watermark = [wmLeft.trim(), wmRight.trim()].filter(Boolean).join(WM_DIVIDER);   // "Atom | Feel"; one side empty => no dangling divider
+  const [wake, setWake] = useState('');
+  const [saved, setSaved] = useState<'' | 'yes' | 'no'>('');
   const [fx, setFx] = useState<FxSettings>(defaultFx);
   const setFxK = <K extends keyof FxSettings>(k: K, v: FxSettings[K]) => setFx((f) => ({ ...f, [k]: v }));
   const [wmLocked, setWmLocked] = useState(false);
@@ -85,14 +91,15 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const [rs, setRs] = useState<RenderStatus | null>(null);
   const [err, setErr] = useState('');
   const jobRef = useRef<Job | null>(null);
+  const cancelWake = useRef(false);
   const dragRef = useRef<{ track: string; id: string } | null>(null);
   const voiceEl = useRef<HTMLAudioElement>(null);
   const musicEl = useRef<HTMLAudioElement>(null);
   const videoEl = useRef<HTMLVideoElement>(null);
 
   // remembered style + watermark (the watermark lock survives reloads so a handle is never edited by accident)
-  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (typeof p.watermark === 'string') setWatermark(/^(ips\s*\|\s*media|@atom_edit)$/i.test(p.watermark.trim()) ? 'Atom Edit' : p.watermark); if (p.fx) setFx({ ...defaultFx, ...p.fx }); if (p.wmLocked) setWmLocked(true); } catch { /* ignore */ } }, []);
-  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, watermark, wmLocked, fx })); } catch { /* ignore */ } }, [caption, watermark, wmLocked, fx]);
+  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (typeof p.wmLeft === 'string') { setWmLeft(p.wmLeft); setWmRight(String(p.wmRight ?? '')); } else if (typeof p.watermark === 'string' && !/^(ips\s*\|\s*media|@atom_edit|atom edit)$/i.test(p.watermark.trim())) { const [l, ...r] = p.watermark.split('|'); setWmLeft(l.trim()); setWmRight(r.join('|').trim()); } if (p.fx) setFx({ ...defaultFx, ...p.fx }); if (p.wmLocked) setWmLocked(true); } catch { /* ignore */ } }, []);
+  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, wmLeft, wmRight, wmLocked, fx })); } catch { /* ignore */ } }, [caption, wmLeft, wmRight, wmLocked, fx]);
 
   const lay = useMemo(() => layout({ assets, visuals, voices, subs }), [assets, visuals, voices, subs]);
   const assetOf = useCallback((id: string) => assets.find((a) => a.id === id), [assets]);
@@ -217,28 +224,36 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
       try {
         const s = await renderStatus(job); setRs(s);
         if (s.status === 'DONE') {
-          setPhase('done');
-          if (s.url) void api.fileOutputs('video', 'Timeline render', [{ name: 'timeline.mp4', url: s.url }]).catch(() => undefined);   // Document folder + push
+          // Save to Document FIRST: the MP4 lives on the Pod's disk, so the Pod may only stop after the cloud has the copy.
+          let ok = false;
+          if (s.url) { try { ok = ((await api.fileOutputs('video', 'Timeline render', [{ name: 'timeline.mp4', url: s.url }])).saved ?? 0) > 0; } catch { ok = false; } }
+          setSaved(ok ? 'yes' : 'no'); setPhase('done');
+          if (ok || !getPod().auto) void podRelease('render');      // save failed: keep the Pod up so the Download link works; the Pod's 3-minute watchdog stops it
+          else onNotice('Could not save to Document. Download the MP4 now: the GPU stops by itself in 3 minutes.');
           return;
         }
-        if (s.status === 'FAILED' || s.status === 'CANCELLED') { setPhase('error'); setErr(s.status === 'CANCELLED' ? 'Cancelled.' : s.error || 'Render failed.'); return; }
-      } catch (e) { setPhase('error'); setErr(e instanceof Error ? e.message : 'Lost contact with the render server.'); return; }
+        if (s.status === 'FAILED' || s.status === 'CANCELLED') { void podRelease('render'); setPhase('error'); setErr(s.status === 'CANCELLED' ? 'Cancelled.' : s.error || 'Render failed.'); return; }
+      } catch (e) { void podRelease('render'); setPhase('error'); setErr(e instanceof Error ? e.message : 'Lost contact with the render server.'); return; }
     }
   }, []);
   const doExport = async () => {
     if (!visuals.length) { onNotice('Add at least one visual clip first.'); return; }
     if (lay.voices.length && lay.total > lay.visualTotal + 0.3) onNotice(`Voiceover (${lay.total.toFixed(1)}s) is longer than the visuals (${lay.visualTotal.toFixed(1)}s): the end will be cut. Use "Match voice length".`);
-    setErr(''); setRs(null); setUpPct(0); setPhase('uploading');
+    cancelWake.current = false; setErr(''); setRs(null); setUpPct(0); setSaved(''); setPhase('uploading');
     try {
+      await podAcquire('render', getVideoEndpoint().url, setWake, () => cancelWake.current); setWake('');
       const built = buildPayload({ assets, visuals, voices, subs, musicId, musicVolume, masterPrompt, reframe, portrait, hd, caption, fontAsset, watermark, fx });
+      if (cancelWake.current) throw new Error('cancelled');
       const job = await startRender(built, setUpPct);
       jobRef.current = job; setPhase('rendering'); void poll(job);
     } catch (e) {
+      void podRelease('render'); setWake('');
       const m = e instanceof Error ? e.message : 'Export failed';
-      setPhase('error'); setErr(m === 'NO_ENDPOINT' ? 'Connect your GPU / render server first (menu → Command Center → Video Engine).' : m === 'RUNPOD' ? 'Timeline export needs the Colab (or your own) render server. RunPod serverless cannot take this upload.' : m);
+      if (m === 'cancelled') { setPhase('idle'); return; }
+      setPhase('error'); setErr(m === 'NO_ENDPOINT' ? 'Connect your GPU / render server first (menu → Command Center → Video Engine).' : m === 'RUNPOD' ? 'Timeline export needs the RunPod Pod render server (worker/render/start.sh, port 8000), not a Serverless endpoint.' : m);
     }
   };
-  const doCancel = async () => { const j = jobRef.current; jobRef.current = null; if (j) await cancelRender(j); setPhase('idle'); setRs(null); };
+  const doCancel = async () => { cancelWake.current = true; const j = jobRef.current; jobRef.current = null; if (j) await cancelRender(j); void podRelease('render'); setWake(''); setPhase('idle'); setRs(null); };
 
   const cv = canvasFor(portrait, hd);
   const ratio = `${cv.w} / ${cv.h}`;
@@ -405,22 +420,26 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     <details className="tl-panel" open>
       <summary><Lock size={15} /> Watermark</summary>
       <div className="tl-wm-row">
-        <input className="studio-input" value={watermark} readOnly={wmLocked} placeholder="Atom Edit" onChange={(e) => setWatermark(e.target.value)} aria-label="Watermark text" />
+        <div className="wm-split">
+          <input className="wm-in" value={wmLeft} disabled={wmLocked} maxLength={40} placeholder="Atom" onChange={(e) => setWmLeft(e.target.value)} aria-label="Watermark left text" />
+          <span className="wm-div" aria-hidden="true">|</span>
+          <input className="wm-in" value={wmRight} disabled={wmLocked} maxLength={40} placeholder="Feel" onChange={(e) => setWmRight(e.target.value)} aria-label="Watermark right text" />
+        </div>
         <button type="button" className={`toggle ${wmLocked ? 'is-on' : ''}`} onClick={() => setWmLocked((v) => !v)} aria-pressed={wmLocked} aria-label={wmLocked ? 'Unlock watermark' : 'Lock watermark'}><span /></button>
         <span className="tl-lock">{wmLocked ? <><Lock size={13} /> Locked</> : <><Unlock size={13} /> Unlocked</>}</span>
       </div>
-      <p className="access-help">Placed at the top-left corner and burned into the export. Lock it so it cannot be edited by accident.</p>
+      <p className="access-help">Left | Right, for example your YouTube | Facebook channel names. The divider is fixed. Placed at the top-left corner and burned into the export. Lock it so it cannot be edited by accident.</p>
     </details>
 
     {/* 7 · export */}
     <div className="tl-export">
       <button type="button" className="primary-button big-copy" onClick={doExport} disabled={busy || !visuals.length}><Download size={16} /> Export Video · {cv.w}×{cv.h}</button>
       {busy && <div className="tl-progress"><div className="tl-bar-track"><i style={{ width: `${phase === 'uploading' ? upPct * 0.5 : 50 + (rs?.progress ?? 0) / 2}%` }} /></div>
-        <span>{phase === 'uploading' ? `Uploading to render server… ${upPct}%` : `${rs?.stage ?? 'Starting'} · ${Math.round(rs?.progress ?? 0)}%`}</span>
+        <span>{phase === 'uploading' && wake ? `⚡ ${wake}` : phase === 'uploading' ? `Uploading to render server… ${upPct}%` : `${rs?.stage ?? 'Starting'} · ${Math.round(rs?.progress ?? 0)}%`}</span>
         <button type="button" className="text-button" onClick={doCancel}>Cancel</button></div>}
-      {phase === 'done' && rs?.url && <div className="access-status ok">Done. <a href={rs.url} download target="_blank" rel="noreferrer">Download MP4</a></div>}
+      {phase === 'done' && <div className="access-status ok">{saved === 'yes' ? 'Done. Saved to Document (the GPU is stopping).' : <>Done. {rs?.url && <a href={rs.url} download target="_blank" rel="noreferrer">Download MP4</a>}</>}</div>}
       {phase === 'error' && <div className="access-status bad">{err}</div>}
-      <p className="access-help">Sends the timeline (clips, exact durations, animation prompts, reframe, captions, watermark) as one JSON job to your render server (Colab). Keep that Colab cell running.</p>
+      <p className="access-help">Sends the timeline (clips, exact durations, animation prompts, reframe, captions, watermark) as one JSON job to your RunPod GPU render server. With Auto-Start & Auto-Stop on (Command Center), the Pod wakes for the export, the video is saved to Document, then the Pod stops. If this device goes offline, the Pod stops itself after 3 minutes.</p>
     </div>
     <audio ref={voiceEl} hidden /><audio ref={musicEl} hidden />
   </section>;

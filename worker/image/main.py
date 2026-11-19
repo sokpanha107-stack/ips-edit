@@ -4,6 +4,7 @@ import hmac, os, shutil, subprocess
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import image_api
+import idle
 
 KEY = os.environ.get('IMAGE_KEY', '')
 app = FastAPI()
@@ -38,3 +39,4 @@ def hardware():
 
 
 image_api.register(app)
+idle.start(app)

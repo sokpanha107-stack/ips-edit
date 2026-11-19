@@ -28,7 +28,7 @@ export function startImageJob(signature: File, prompts: string[], opt: ImageOpti
         if (!res.ok || !d.id) throw new Error(d.error || `Image Engine answered ${res.status}`);
         resolve({ id: d.id, base, key: ep.key });
       })
-      .catch((e) => reject(e instanceof TypeError ? new Error('Cannot reach the Image Engine. Is the Colab cell still running and the URL current?') : e));
+      .catch((e) => reject(e instanceof TypeError ? new Error('Cannot reach the Image Engine. Is the RunPod Pod running and the URL current?') : e));
   });
 }
 

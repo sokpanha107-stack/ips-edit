@@ -1,8 +1,8 @@
 'use client';
 
-import { podPowerOff, podPowerOn } from '@/lib/client/pod';
+import { podAcquire, podRelease } from '@/lib/client/pod';
 import { setBatchProgress } from '@/lib/client/progress';
-import { api } from '@/lib/client/api';
+import { api, getEngineEndpoint } from '@/lib/client/api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Download, Play, Send, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { cancelImageJob, fetchImageFile, imageStatus, parsePrompts, startImageJob, type ImageJob, type ImageOptions } from '@/lib/client/imageEngine';
@@ -45,6 +45,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
   const [master, setMaster] = useState('');
   const [raw, setRaw] = useState('');
   const [phase, setPhase] = useState<'idle' | 'busy' | 'paused' | 'done' | 'error'>('idle');
+  const [wake, setWake] = useState('');
   const [doneN, setDoneN] = useState(0);
   const [total, setTotal] = useState(0);
   const [err, setErr] = useState('');
@@ -74,8 +75,10 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
     const from = nextIndex(r);
     const ref = readSavedRef('image');
     if (!ref) throw new Error('Reference image is missing.');
+    const ep0 = getEngineEndpoint('image');
     const sig = await dataUrlToFile(await cropToAspect(ref.url, r.aspect), ref.name);
-    await podPowerOn();
+    await podAcquire('image', ep0.url, (m) => setWake(m), () => false);
+    setWake('');
     const job = await startImageJob(sig, r.prompts.slice(from), r.opt);
     return { ...r, job, offset: from };
   }, []);
@@ -111,7 +114,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
         }
         if (rec.saved.length >= rec.prompts.length) {
           await api.fileOutputs('image', rec.folder, [], { folderId: rec.folderId, notify: true }).catch(() => undefined);
-          writeRec(null); setBatchProgress(null); void podPowerOff(); setPhase('done'); latest.current.onNotice(latest.current.c.done); return;
+          writeRec(null); setBatchProgress(null); void podRelease('image'); setPhase('done'); latest.current.onNotice(latest.current.c.done); return;
         }
         if (s.status === 'FAILED' || s.status === 'CANCELLED') throw Object.assign(new Error(s.error || 'job stopped'), { lost: true });
         if (s.status === 'DONE') throw Object.assign(new Error('incomplete'), { lost: true });   // finished but some scenes were not saved: restart those
@@ -142,10 +145,11 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
       const rec = await launch(base); writeRec(rec); void run(rec);
     } catch (e) {
       const m = e instanceof Error ? e.message : 'Failed';
+      void podRelease('image'); setWake('');
       setPhase('error'); setErr(m === 'NO_ENDPOINT' ? c.noEp : m === 'RUNPOD' ? c.runpod : m);
     }
   };
-  const cancel = async () => { runId.current += 1; const r = readRec(); writeRec(null); setBatchProgress(null); if (r) await cancelImageJob(r.job); void podPowerOff(); setPhase('idle'); setErr(''); };
+  const cancel = async () => { runId.current += 1; const r = readRec(); writeRec(null); setBatchProgress(null); if (r) await cancelImageJob(r.job); void podRelease('image'); setWake(''); setPhase('idle'); setErr(''); };
   const resumeNow = () => { const r = readRec(); if (r) void run(r); };
 
   return <section className="screen-card engine-screen image-screen">
@@ -164,7 +168,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
     {!active && phase !== 'done' && <div className={`scene-check ${ready ? 'ok' : prompts.length ? 'bad' : 'neutral'}`}>{ready ? <Check size={14} /> : <ShieldCheck size={14} />}<span>{ready ? `${c.ok} · ${prompts.length}` : problem}</span></div>}
     {!active && <button type="button" className="primary-button generate-button" disabled={!ready} onClick={() => void generate()}><Send size={16} /> {phase === 'done' ? `${c.go} · ${prompts.length}` : c.go}</button>}
     {busy && <div className="tl-progress"><div className="tl-bar-track"><i style={{ width: `${total ? Math.max(2, (doneN / total) * 100) : 2}%` }} /></div>
-      <span>{`⏳ ${Math.min(total, doneN + 1)}/${total}`}</span><button type="button" className="text-button" onClick={() => void cancel()}><X size={13} /> {c.cancel}</button></div>}
+      <span>{wake ? `⚡ ${wake}` : `⏳ ${Math.min(total, doneN + 1)}/${total}`}</span><button type="button" className="text-button" onClick={() => void cancel()}><X size={13} /> {c.cancel}</button></div>}
     {phase === 'paused' && <><div className="paused-box">⚠ {err}</div><button type="button" className="resume-button" onClick={resumeNow}><Play size={15} fill="currentColor" /> {c.resume}</button><button type="button" className="text-button" onClick={() => void cancel()}><X size={13} /> {c.cancel}</button></>}
     {phase === 'done' && <div className="access-status ok"><Check size={13} /> {c.done}</div>}
     {phase === 'error' && err && <div className="access-status bad">{err}</div>}
