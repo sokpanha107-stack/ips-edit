@@ -4,3 +4,7 @@ python-multipart
 numpy
 opencv-python-headless
 fonttools
+Pillow
+# 2.5D depth parallax (Depth-Anything-V2-Small). torch is already in RunPod's PyTorch images; start.sh installs it only if missing.
+transformers>=4.44
+huggingface_hub>=0.24

@@ -10,8 +10,8 @@ export interface VClip {
   motion?: string; depth?: boolean; camera?: string; overlay?: string; callout?: string; sfx?: string; subMode?: 'line' | 'block';
 }
 /** Global Top Motion Graphic settings (per-scene tags override them). */
-export interface FxSettings { depth: boolean; camera: string; overlay: string; autoSfx: boolean; autoDuck: boolean; subMode: 'line' | 'block' }
-export const defaultFx: FxSettings = { depth: false, camera: 'none', overlay: 'none', autoSfx: false, autoDuck: true, subMode: 'line' };
+export interface FxSettings { depth: boolean; camera: string; overlay: string; autoSfx: boolean; autoDuck: boolean; /** 'style' = follow the Caption style animation (default) */ subMode: 'style' | 'line' | 'block' }
+export const defaultFx: FxSettings = { depth: false, camera: 'none', overlay: 'none', autoSfx: false, autoDuck: true, subMode: 'style' };
 /** Auto-SFX: the sound that fits how a scene enters. The first scene has no entry sound. */
 export const autoSfxFor = (transition: string | undefined): string => {
   const t = transition ?? 'cut';

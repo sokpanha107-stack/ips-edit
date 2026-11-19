@@ -273,7 +273,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
         <label className="tl-check"><input type="checkbox" checked={fx.autoSfx} onChange={(e) => setFxK('autoSfx', e.target.checked)} /> Auto-SFX on scene transitions (whoosh · riser · bass hit · chime)</label>
         <label className="field-label">Camera<select className="studio-input" value={fx.camera} onChange={(e) => setFxK('camera', e.target.value)}>{CAMERAS.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</select></label>
         <label className="field-label">Atmosphere overlay<select className="studio-input" value={fx.overlay} onChange={(e) => setFxK('overlay', e.target.value)}>{OVERLAYS.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</select></label>
-        <label className="field-label">Subtitle mode<select className="studio-input" value={fx.subMode} onChange={(e) => setFxK('subMode', e.target.value as FxSettings['subMode'])}><option value="line">1-Line (word-by-word reveal)</option><option value="block">Full Block (pop-up + word highlight)</option></select></label>
+        <label className="field-label">Subtitle mode<select className="studio-input" value={fx.subMode} onChange={(e) => setFxK('subMode', e.target.value as FxSettings['subMode'])}><option value="style">Caption style (default)</option><option value="line">1-Line (word-by-word reveal)</option><option value="block">Full Block (pop-up + word highlight)</option></select></label>
       </div>
       <p className="access-help">Motion uses exponential ease-out by default. A scene tag (Depth / Camera / Overlay / SFX / Subtitle) overrides these for that scene only.</p>
     </details>

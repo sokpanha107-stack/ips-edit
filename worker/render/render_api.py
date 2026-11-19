@@ -1,4 +1,4 @@
-"""IPS edit · Timeline render service (FFmpeg + OpenCV). Free, runs on Colab / any Linux box with ffmpeg.
+"""Atom Edit · Timeline render service (FFmpeg + OpenCV). Built for RunPod Pods (NVENC + cached AI models); also runs on any Linux box with ffmpeg.
 
 POST /render            multipart: payload (JSON string) + one file per key referenced in the payload  -> {id}
 GET  /render/status/{id}  -> {status: QUEUED|RUNNING|DONE|FAILED|CANCELLED, progress 0-100, stage, error, url}
@@ -18,9 +18,14 @@ try:
 except Exception:  # noqa: BLE001  (render still works without OpenCV, just centred)
     cv2 = None
 
+try:                                     # motion graphics (NVENC, depth parallax, overlays, SFX, ducking, callouts); absent => classic render
+    import motion_fx as MFX
+except Exception:  # noqa: BLE001
+    MFX = None
+
 WORK = Path(os.environ.get('IPS_RENDER_DIR', tempfile.gettempdir())) / 'ips_render'
 OUT = WORK / 'out'
-FONT_CACHE = WORK / 'fonts_cache'
+FONT_CACHE = (MFX.CACHE / 'fonts') if MFX else WORK / 'fonts_cache'   # RunPod: /workspace/.cache/fonts survives Pod restarts
 FONT_URLS = {   # best-effort downloads of the premium Khmer fonts (Google Fonts repository)
     'Kantumruy Pro': 'https://raw.githubusercontent.com/google/fonts/main/ofl/kantumruypro/KantumruyPro%5Bwght%5D.ttf',
     'Suwannaphum': 'https://raw.githubusercontent.com/google/fonts/main/ofl/suwannaphum/Suwannaphum-Regular.ttf',
@@ -53,22 +58,27 @@ def parse_motion(prompt: str) -> dict:
     return {'type': typ, 'amount': amount}
 
 
-def zoompan_filter(m: dict, d: int, W: int, H: int, fps: int, cx: float = 0.5, cy: float = 0.5) -> str:
-    """zoompan expressions without commas. cx/cy = subject centre (0..1) so zooms aim at the subject, not the middle."""
+def zoompan_filter(m: dict, d: int, W: int, H: int, fps: int, cx: float = 0.5, cy: float = 0.5, easing: str = 'linear', camera: str = 'none') -> str:
+    """zoompan expressions. cx/cy = subject centre (0..1) so zooms aim at the subject, not the middle.
+    easing 'exponential_out' = fast start, soft landing (default for new payloads); camera adds handheld_breath / impact_shake / smooth_glide."""
     a, size = m['amount'], f'{W}x{H}'
+    E = MFX.ease_expr(f'on/{d}', easing) if MFX else f'on/{d}'
+    xe, ye, zmin = MFX.camera_offsets(camera, fps) if MFX else ('0', '0', 1.0)
     focus_x = f'(iw*{cx:.4f}-iw/zoom/2)'
     focus_y = f'(ih*{cy:.4f}-ih/zoom/2)'
     t = m['type']
-    if t == 'in':   z, x, y = f'1+{a}*on/{d}', focus_x, focus_y
-    elif t == 'out': z, x, y = f'{1 + a}-{a}*on/{d}', focus_x, focus_y
+    zb = f'{zmin:.3f}' if zmin > 1 else '1'
+    if t == 'in':   z, x, y = f'{zb}+{a}*{E}', focus_x, focus_y
+    elif t == 'out': z, x, y = f'{zb}+{a}-{a}*{E}', focus_x, focus_y
+    elif t == 'hold': z, x, y = zb, focus_x, focus_y                       # no move, only camera shake
     else:
-        z = f'{1 + max(a, 0.15)}'
+        z = f'{max(zmin, 1 + max(a, 0.15)):.3f}'
         x, y = '(iw-iw/zoom)/2', '(ih-ih/zoom)/2'
-        if t == 'left':  x = f'(iw-iw/zoom)*(1-on/{d})'
-        if t == 'right': x = f'(iw-iw/zoom)*on/{d}'
-        if t == 'up':    y = f'(ih-ih/zoom)*(1-on/{d})'
-        if t == 'down':  y = f'(ih-ih/zoom)*on/{d}'
-    # zoompan cannot read outside the picture: clamp with max/min is comma-based, so rely on zoom>=1 and focus inside the frame
+        if t == 'left':  x = f'(iw-iw/zoom)*(1-{E})'
+        if t == 'right': x = f'(iw-iw/zoom)*{E}'
+        if t == 'up':    y = f'(ih-ih/zoom)*(1-{E})'
+        if t == 'down':  y = f'(ih-ih/zoom)*{E}'
+    if xe != '0': x, y = f'({x})+({xe})', f'({y})+({ye})'                  # zoompan clips x/y to the picture, so shake never exposes borders
     return f"zoompan=z='{z}':x='{x}':y='{y}':d={d}:s={size}:fps={fps}"
 
 
@@ -192,7 +202,7 @@ def wrap_tokens(tokens, max_chars):
     return breaks
 
 
-def build_ass(subs, cap, W, H, family):
+def build_ass(subs, cap, W, H, family, callouts=None):
     size = max(10, int(round(H * float(cap.get('size', 5.5)) / 100)))
     outline = float(cap.get('outlineWidth', 3)) * H / 720
     shadow = float(cap.get('shadow', 0)) * H / 720
@@ -206,8 +216,11 @@ def build_ass(subs, cap, W, H, family):
             '[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, '
             'ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n'
             f'Style: Default,{family},{size},{ass_color(primary)},{ass_color(secondary)},{ass_color(cap.get("outline", "#000000"))},&H80000000,{bold},0,0,0,'
-            f'100,100,0,0,1,{outline:.1f},{shadow:.1f},{align},{int(W * 0.06)},{int(W * 0.06)},{margin_v},1\n\n'
+            f'100,100,0,0,1,{outline:.1f},{shadow:.1f},{align},{int(W * 0.06)},{int(W * 0.06)},{margin_v},1\n'
+            '@@CALLOUT@@'
             '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
+    if callouts and MFX: head = head.replace('@@CALLOUT@@', MFX.callout_style(family, H) + '\n')
+    else: head = head.replace('@@CALLOUT@@', '\n')
     max_chars = max(6, int((W * 0.88) / (size * 0.62)))
     glow = float(cap.get('glow', 0))
     lines = []
@@ -244,7 +257,36 @@ def build_ass(subs, cap, W, H, family):
                     else:
                         out.append(seg)
                 return ''.join(out)
-            if anim == 'karaoke':
+            mode = s.get('mode')
+            if mode == 'line':
+                # 1-Line: every line is shown on its own, its words appear one by one from left to right (layout stays fixed: unread words are transparent)
+                lines_idx, cur_l = [], []
+                for i in range(len(toks)):
+                    if i in br and cur_l: lines_idx.append(cur_l); cur_l = []
+                    cur_l.append(i)
+                if cur_l: lines_idx.append(cur_l)
+                for li, idxs in enumerate(lines_idx):
+                    line_end = wt[lines_idx[li + 1][0]][0] if li + 1 < len(lines_idx) else end
+                    for pos, j in enumerate(idxs):
+                        ev_end = wt[idxs[pos + 1]][0] if pos + 1 < len(idxs) else line_end
+                        txt = ''.join((f'{{\\alpha&HFF&}}{toks[q].replace("{", "(").replace("}", ")")}{{\\alpha&H00&}}' if q > j else toks[q].replace('{', '(').replace('}', ')')) for q in idxs)
+                        emit(layer, wt[j][0], max(ev_end, wt[j][0] + 0.02), txt.lstrip(), prefix)
+            elif mode == 'block':
+                # Full Block: the whole paragraph pops up, then the current word is highlighted and pops
+                hi_bgr = ass_color(hi)[4:]
+                for j in range(len(toks)):
+                    ev_end = wt[j + 1][0] if j + 1 < len(toks) else end
+                    parts = []
+                    for i, t in enumerate(toks):
+                        if i in br: parts.append('\\N'); t = t.lstrip()
+                        seg = t.replace('{', '(').replace('}', ')')
+                        if i == j:
+                            pop = '' if j == 0 else '\\fscx118\\fscy118\\t(0,140,\\fscx100\\fscy100)'
+                            parts.append(f'{{\\1c&H{hi_bgr}&{pop}}}{seg}{{\\1c&H{ass_color(base)[4:]}&\\fscx100\\fscy100}}')
+                        else: parts.append(seg)
+                    pre = '{\\fad(90,0)\\fscx86\\fscy86\\t(0,170,\\fscx100\\fscy100)}' if j == 0 else ''
+                    emit(layer, wt[j][0] if j else start, max(ev_end, wt[j][0] + 0.02), ''.join(parts), prefix + pre)
+            elif anim == 'karaoke':
                 emit(layer, start, end, text_with(karaoke=True), prefix)
             elif anim == 'pop':
                 for i in range(len(toks)):
@@ -252,10 +294,30 @@ def build_ass(subs, cap, W, H, family):
                     emit(layer, wt[i][0], ev_end, text_with(visible_upto=i, pop_idx=i), prefix)
             else:
                 emit(layer, start, end, text_with(), prefix)
+    if callouts and MFX:
+        for (txt, a, b, sx) in callouts:
+            lines += MFX.callout_events(txt, a, b, W, H, sx, ass_time)
     return head + '\n'.join(lines) + '\n'
 
 
 # ------------------------------------------------------------------ ffmpeg helpers
+def venc(crf: int, fps: int, fast: bool = True) -> list:
+    """h264_nvenc when the GPU encoder works, libx264 otherwise."""
+    if MFX: return MFX.venc(crf, fps, fast)
+    return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', str(crf), '-pix_fmt', 'yuv420p', '-r', str(fps)]
+
+
+def run_enc(build, **kw):
+    """Runs build() -> cmd; if the NVENC encode fails, switches to libx264 for the rest of the process and retries once."""
+    try:
+        return run(build(), **kw)
+    except RuntimeError as e:
+        if str(e) == 'cancelled' or not (MFX and MFX.nvenc_ok()): raise
+        print('[render] NVENC failed, falling back to libx264:', str(e)[-160:])
+        MFX.disable_nvenc()
+        return run(build(), **kw)
+
+
 def run(cmd, cwd=None, job=None, total=None, base=0.0, span=0.0):
     """Runs ffmpeg, streams -progress so the UI bar moves in real time."""
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -297,23 +359,63 @@ def cover_crop(iw, ih, W, H, cx, cy):
     return x, y, cw, ch
 
 
-def make_segment(job, i, v, src: Path, W, H, fps, reframe, master, workdir, base, span, dur=None):
+def parallax_segment(job, v, img, box, W, H, fps, dur, m, easing, camera, fxc, out, base, span):
+    """2.5D depth parallax: AI depth map -> OpenCV remap frames piped into ffmpeg. Returns True, or False when the depth model is
+    unavailable (the caller then renders the normal 2D exponential-ease move)."""
+    x, y, cw, ch = box
+    crop = img[y:y + ch, x:x + cw]
+    dm = MFX.depth_map(crop)
+    if dm is None: return False
+    mt = m['type'] if m['type'] in ('in', 'out', 'left', 'right', 'up', 'down') else 'drift'
+    amount = min(0.25, m['amount'] or 0.12)
+    n = max(2, int(round(dur * fps)))
+    cmd = ['ffmpeg', '-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{W}x{H}', '-r', str(fps), '-i', '-', *venc(19, fps), '-an', str(out)]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        for k, fr in enumerate(MFX.parallax_frames(crop, dm, W, H, fps, dur, mt, amount, easing, camera, fxc[0], fxc[1])):
+            proc.stdin.write(fr.tobytes())
+            if k % 15 == 0:
+                job['progress'] = round(min(99.0, base + span * k / n), 1)
+                if job.get('cancel'): proc.kill(); raise RuntimeError('cancelled')
+        proc.stdin.close()
+        err = proc.stderr.read().decode('utf-8', 'ignore')
+        if proc.wait() != 0: raise RuntimeError(err[-300:])
+        return True
+    except Exception as e:  # noqa: BLE001
+        proc.kill()
+        if str(e) == 'cancelled': raise
+        print('[parallax] failed, using 2D motion:', str(e)[-200:])
+        return False
+    finally:
+        MFX.free_gpu()
+
+
+def make_segment(job, i, v, src: Path, W, H, fps, reframe, master, workdir, base, span, dur=None, S=None):
+    S = S or {'on': False, 'easing': 'linear'}
     dur = max(0.2, float(dur if dur is not None else v['duration']))
     out = workdir / f'seg_{i:03d}.mp4'
-    enc = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p', '-r', str(fps), '-an']
+    fxs = MFX.scene_fx(v) if (MFX and S.get('on')) else {'depth': False, 'camera': 'none'}
     iw, ih, img = media_size(src, v['kind'])
+    v['_subject'] = 0.5
     if v['kind'] == 'image':
         cx, cy, how = (0.5, 0.5, 'center')
         if reframe: cx, cy, how = detect_subject(img)
         x, y, cw, ch = cover_crop(iw, ih, W, H, cx, cy)
-        m = parse_motion(v.get('prompt') or master)
+        m = parse_motion(v.get('prompt') or v.get('motion') or master)
         d = max(2, int(round(dur * fps)))
         # subject position inside the cropped window (for zoom focus)
         fx, fy = min(1, max(0, (cx * iw - x) / cw)), min(1, max(0, (cy * ih - y) / ch))
+        v['_subject'] = fx if reframe else 0.5
+        fc = (fx if reframe else 0.5, fy if reframe else 0.5)
+        if fxs['depth'] and MFX and cv2 is not None and img is not None:
+            if parallax_segment(job, v, img, (x, y, cw, ch), W, H, fps, dur, m, S['easing'], fxs['camera'], fc, out, base, span):
+                v['_info'] = f'{how}/parallax-{m["type"]}'
+                return out
+        if m['type'] == 'none' and fxs['camera'] != 'none': m = {'type': 'hold', 'amount': 0.0}
         chain = [f'crop={cw}:{ch}:{x}:{y}', f'scale={W * 2}:{H * 2}:flags=lanczos']
-        chain.append(zoompan_filter(m, d, W, H, fps, fx if reframe else 0.5, fy if reframe else 0.5) if m['type'] != 'none'
+        chain.append(zoompan_filter(m, d, W, H, fps, fc[0], fc[1], S['easing'], fxs['camera']) if m['type'] != 'none'
                      else f'scale={W}:{H},fps={fps},loop=loop={d}:size=1:start=0')
-        cmd = ['ffmpeg', '-y', '-v', 'error', '-i', str(src), '-vf', ','.join(chain), '-frames:v', str(d), *enc, '-progress', 'pipe:1', '-nostats', str(out)]
+        build = lambda: ['ffmpeg', '-y', '-v', 'error', '-i', str(src), '-vf', ','.join(chain), '-frames:v', str(d), *venc(19, fps), '-an', '-progress', 'pipe:1', '-nostats', str(out)]
         v['_info'] = f'{how}/{m["type"]}'
     else:
         scale = max(W / iw, H / ih)
@@ -327,8 +429,8 @@ def make_segment(job, i, v, src: Path, W, H, fps, reframe, master, workdir, base
         else:
             crop = f'crop={W}:{H}'
         vf = f'scale={sw}:{sh},{crop},fps={fps},tpad=stop_mode=clone:stop_duration={dur:.3f}'
-        cmd = ['ffmpeg', '-y', '-v', 'error', '-i', str(src), '-vf', vf, '-t', f'{dur:.3f}', *enc, '-progress', 'pipe:1', '-nostats', str(out)]
-    run(cmd, job=job, total=dur, base=base, span=span)
+        build = lambda: ['ffmpeg', '-y', '-v', 'error', '-i', str(src), '-vf', vf, '-t', f'{dur:.3f}', *venc(19, fps), '-an', '-progress', 'pipe:1', '-nostats', str(out)]
+    run_enc(build, job=job, total=dur, base=base, span=span)
     return out
 
 
@@ -356,6 +458,7 @@ def render_job(jid: str):
     job = JOBS[jid]; wd: Path = job['dir']
     try:
         P = job['payload']; job['status'] = 'RUNNING'
+        S = MFX.settings(P) if MFX else {'on': False, 'easing': 'linear', 'duck': None, 'sfx': False}
         W, H, fps = int(P['canvas']['w']), int(P['canvas']['h']), int(P['canvas'].get('fps', 30))
         W, H = W // 2 * 2, H // 2 * 2
         vis = P['visuals']
@@ -373,7 +476,8 @@ def render_job(jid: str):
         segs, acc = [], 0.0
         for i, v in enumerate(vis):
             job['stage'] = f'Clip {i + 1}/{len(vis)}'
-            segs.append(make_segment(job, i, v, job['files'][v['file']], W, H, fps, bool(P.get('reframe')), P.get('masterPrompt', ''), wd, 60 * acc / total, 60 * durs[i] / total, dur=durs[i] + tds[i]))
+            segs.append(make_segment(job, i, v, job['files'][v['file']], W, H, fps, bool(P.get('reframe')), P.get('masterPrompt', ''), wd, 60 * acc / total, 60 * durs[i] / total, dur=durs[i] + tds[i], S=S))
+            if MFX: MFX.free_gpu()
             acc += durs[i]
         # cut-only stretches are joined without re-encoding, then the stretches are cross-faded
         runs = []   # (file, nominal start of its first scene, transition into it)
@@ -404,7 +508,7 @@ def render_job(jid: str):
                 i = runs[k][0]
                 fcg.append(f"[{prev}][r{k}]xfade=transition={TRANS[str(vis[i].get('transition'))]}:duration={tds[i]:.3f}:offset={max(0.0, starts[i] - tds[i]):.3f}[x{k}]")
                 prev = f'x{k}'
-            run(['ffmpeg', '-y', '-v', 'error', *ins, '-filter_complex', ';'.join(fcg), '-map', f'[{prev}]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', str(fps), '-an',
+            run_enc(lambda: ['ffmpeg', '-y', '-v', 'error', *ins, '-filter_complex', ';'.join(fcg), '-map', f'[{prev}]', *venc(18, fps), '-an',
                  '-t', f'{total:.3f}', '-progress', 'pipe:1', '-nostats', 'joined.mp4'], cwd=wd, job=job, total=total, base=55, span=5)
 
         # captions -> .ass
@@ -417,40 +521,86 @@ def render_job(jid: str):
             family = font_family_of(user_font) or family
         else:
             ensure_fonts(fonts, family)
-        vfs = []
         subs = P.get('subtitles') or []
-        if subs:
-            (wd / 'subs.ass').write_text(build_ass(subs, cap, W, H, family), encoding='utf-8')
-            vfs.append('ass=subs.ass:fontsdir=fonts')
+        callouts = []
+        if S['on'] and MFX:
+            for i, v in enumerate(vis):
+                c = MFX.scene_fx(v)['callout']
+                if c:
+                    a0 = starts[i] + 0.3
+                    callouts.append((c, a0, min(starts[i] + durs[i] - 0.15, a0 + 4.0), float(v.get('_subject', 0.5))))
+        if subs or callouts:
+            (wd / 'subs.ass').write_text(build_ass(subs, cap, W, H, family, callouts), encoding='utf-8')
         wm = (P.get('watermark') or {}).get('text', '').strip()
-        if wm:
-            (wd / 'wm.txt').write_text(wm, encoding='utf-8')
-            ff = find_font(user_font)
-            vfs.append(f"drawtext=textfile=wm.txt:{'fontfile=' + ff + ':' if ff else ''}x=w*0.04:y=h*0.035:fontsize=h*0.032:fontcolor=white@0.88:shadowcolor=black@0.6:shadowx=2:shadowy=2")
+        ff = find_font(user_font)
+        if wm: (wd / 'wm.txt').write_text(wm, encoding='utf-8')
 
-        # audio
-        inputs, fc, labels = ['-i', 'joined.mp4'], [], []
-        n_in = 1
-        for a in P.get('voices') or []:
-            inputs += ['-i', str(job['files'][a['file']])]
-            ms = int(max(0, float(a.get('start', 0))) * 1000)
-            fc.append(f'[{n_in}:a]adelay={ms}|{ms},volume={float(a.get("volume", 1.0))}[a{n_in}]'); labels.append(f'[a{n_in}]'); n_in += 1
+        # procedural overlays + sound effects + ducking envelope (all synthesised here, nothing is downloaded)
+        ranges = MFX.overlay_ranges(vis, starts, durs) if (S['on'] and MFX) else {}
+        sfx_events = []
+        if S['on'] and MFX:
+            for i, v in enumerate(vis):
+                name = MFX.scene_fx(v)['sfx']
+                if i > 0 and name in ('whoosh', 'riser', 'bass_hit', 'subtle_chime'):
+                    sfx_events.append((name, max(0.0, starts[i] - tds[i])))
+        voice_spans = [(float(a.get('start', 0)), float(a.get('start', 0)) + float(a.get('duration', 0))) for a in (P.get('voices') or [])]
         mus = P.get('music')
-        if mus and mus.get('file') in job['files']:
-            inputs += ['-stream_loop', '-1', '-i', str(job['files'][mus['file']])]
-            fc.append(f'[{n_in}:a]atrim=0:{total:.3f},volume={float(mus.get("volume", 0.25))}[a{n_in}]'); labels.append(f'[a{n_in}]'); n_in += 1
-        vchain = ','.join(vfs) if vfs else 'null'
-        fc.append(f'[0:v]{vchain}[v]')
-        cmd = ['ffmpeg', '-y', '-v', 'error', *inputs]
-        if labels:
-            fc.append(f'{"".join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,atrim=0:{total:.3f}[a]')
-            cmd += ['-filter_complex', ';'.join(fc), '-map', '[v]', '-map', '[a]', '-c:a', 'aac', '-b:a', '192k']
-        else:
-            cmd += ['-filter_complex', ';'.join(fc), '-map', '[v]', '-an']
+
+        def final_pass(safe: bool):
+            vfs = []
+            if subs or callouts: vfs.append('ass=subs.ass:fontsdir=fonts')
+            if wm: vfs.append(f"drawtext=textfile=wm.txt:{'fontfile=' + ff + ':' if ff else ''}x=w*0.04:y=h*0.035:fontsize=h*0.032:fontcolor=white@0.88:shadowcolor=black@0.6:shadowx=2:shadowy=2")
+            inputs, fc, labels = ['-i', 'joined.mp4'], [], []
+            n_in = 1
+            for a in P.get('voices') or []:
+                inputs += ['-i', str(job['files'][a['file']])]
+                ms = int(max(0, float(a.get('start', 0))) * 1000)
+                fc.append(f'[{n_in}:a]adelay={ms}|{ms},volume={float(a.get("volume", 1.0))}[a{n_in}]'); labels.append(f'[a{n_in}]'); n_in += 1
+            if mus and mus.get('file') in job['files']:
+                inputs += ['-stream_loop', '-1', '-i', str(job['files'][mus['file']])]
+                mv = float(mus.get('volume', 0.25))
+                if S['duck'] and not safe and voice_spans:
+                    MFX.duck_envelope(wd / 'duck.wav', voice_spans, total, S['duck']['level'], S['duck']['attack'], S['duck']['release'])
+                    fc.append(f'[{n_in}:a]atrim=0:{total:.3f},volume={mv},aresample=44100,aformat=channel_layouts=stereo[m{n_in}]')
+                    inputs += ['-i', 'duck.wav']
+                    fc.append(f'[{n_in + 1}:a]aresample=44100,aformat=channel_layouts=stereo[e{n_in}]')
+                    fc.append(f'[m{n_in}][e{n_in}]amultiply[a{n_in}]'); labels.append(f'[a{n_in}]'); n_in += 2
+                else:
+                    fc.append(f'[{n_in}:a]atrim=0:{total:.3f},volume={mv}[a{n_in}]'); labels.append(f'[a{n_in}]'); n_in += 1
+            if not safe:
+                for name, at in sfx_events:
+                    inputs += ['-i', str(MFX.sfx_file(name))]
+                    ms = int(at * 1000)
+                    fc.append(f'[{n_in}:a]aresample=44100,aformat=channel_layouts=stereo,adelay={ms}|{ms},volume=0.55[a{n_in}]'); labels.append(f'[a{n_in}]'); n_in += 1
+            cur = '0:v'
+            if ranges and not safe:
+                add = MFX.render_additive_overlays(wd / 'fxov.mp4', ranges, total, W, H)
+                if add:
+                    inputs += ['-i', 'fxov.mp4']
+                    fc.append(f'[{n_in}:v]scale={W}:{H}:flags=bilinear,format=gbrp[ovs];[{cur}]format=gbrp[ovb];[ovb][ovs]blend=all_mode=screen:shortest=1,format=yuv420p[blend]')
+                    cur = 'blend'; n_in += 1
+                frags, cur = MFX.filter_overlay_chain(cur, ranges, W, H)
+                fc += frags
+            fc.append(f'[{cur}]{",".join(vfs) if vfs else "null"}[v]')
+            cmd = ['ffmpeg', '-y', '-v', 'error', *inputs]
+            if labels:
+                fc.append(f'{"".join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,atrim=0:{total:.3f}[a]')
+                cmd += ['-filter_complex', ';'.join(fc), '-map', '[v]', '-map', '[a]', '-c:a', 'aac', '-b:a', '192k']
+            else:
+                cmd += ['-filter_complex', ';'.join(fc), '-map', '[v]', '-an']
+            if safe and MFX: MFX.disable_nvenc()
+            cmd += [*venc(20, fps, fast=False), '-movflags', '+faststart', '-t', f'{total:.3f}', '-progress', 'pipe:1', '-nostats', str(final)]
+            return cmd
+
         final = OUT / f'{jid}.mp4'
-        cmd += ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-t', f'{total:.3f}', '-progress', 'pipe:1', '-nostats', str(final)]
-        job['stage'] = 'Burning captions, watermark and mixing audio'
-        run(cmd, cwd=wd, job=job, total=total, base=60, span=39)
+        job['stage'] = 'Motion graphics, captions, watermark and audio mix'
+        try:
+            run_enc(lambda: final_pass(False), cwd=wd, job=job, total=total, base=60, span=39)
+        except RuntimeError as e:
+            if str(e) == 'cancelled' or not (S['on'] and MFX): raise
+            print('[render] motion-graphics pass failed, retrying plain:', str(e)[-300:])     # a broken effect must never lose the whole video
+            job['stage'] = 'Retrying without effects'
+            run(final_pass(True), cwd=wd, job=job, total=total, base=60, span=39)
         job.update(status='DONE', progress=100.0, stage='Done', file=final.name)
     except Exception as e:  # noqa: BLE001
         cancelled = str(e) == 'cancelled'
