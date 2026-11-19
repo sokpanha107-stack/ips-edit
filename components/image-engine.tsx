@@ -9,13 +9,13 @@ import { cancelImageJob, fetchImageFile, imageStatus, parsePrompts, startImageJo
 import { OptionsPanel, RefBar, cropToAspect, dataUrlToFile, readSavedRef, useEngineConfig, type Aspect } from '@/components/engine-kit';
 
 const copy = {
-  en: { folder: 'Folder name', count: 'Scene count', master: 'Master prompt', masterPh: 'Style added to every scene (optional)', scripts: 'Batch scripts', scriptsPh: 'One scene prompt per line · up to 100\na girl walking in a sunny garden\na girl reading a book at night', required: 'Required', optional: 'Optional',
+  en: { folder: 'Folder name', count: 'Scene count', master: 'Master prompt', masterPh: 'Style added to every scene (optional)', scripts: 'Batch scripts', scriptsPh: 'One scene prompt per line · no limit\na girl walking in a sunny garden\na girl reading a book at night', required: 'Required', optional: 'Optional',
     go: 'Generate images', cancel: 'Cancel', resume: 'Resume', results: 'Results', sent: 'In the Timeline media bin',
     noEp: 'Connect your Image Engine first (menu → Command Center → Image Engine).', runpod: 'The Image Engine needs the Colab (or your own) server; RunPod serverless cannot take this batch.',
     needRef: 'Choose the reference image first.', needFolder: 'Enter a folder name.', needCount: 'Enter the scene count.', needPrompts: 'Write at least one scene prompt.', tooMany: 'Maximum is 100 scenes per batch.',
     mismatch: (n: number, w: number) => `Scripts have ${n} scenes but the count is ${w}.`, ok: 'Verified', done: 'All images are ready, saved in Document and sent to the Timeline.',
     paused: (d: number, n: number) => `Connection lost after Scene ${d}. Saved scenes are safe. Resume continues at Scene ${n}.`, resumed: (n: number) => `Resuming at Scene ${n}…`, locked: 'Locked: settings and reference are frozen.' },
-  kh: { folder: 'ឈ្មោះ Folder', count: 'ចំនួន Scene', master: 'Master prompt', masterPh: 'ស្ទីលបន្ថែមលើគ្រប់ Scene (ជម្រើស)', scripts: 'Batch scripts', scriptsPh: 'មួយបន្ទាត់ក្នុងមួយ Scene · ច្រើនបំផុត 100\na girl walking in a sunny garden\na girl reading a book at night', required: 'ត្រូវការ', optional: 'ជម្រើស',
+  kh: { folder: 'ឈ្មោះ Folder', count: 'ចំនួន Scene', master: 'Master prompt', masterPh: 'ស្ទីលបន្ថែមលើគ្រប់ Scene (ជម្រើស)', scripts: 'Batch scripts', scriptsPh: 'មួយបន្ទាត់ក្នុងមួយ Scene · គ្មានកំណត់\na girl walking in a sunny garden\na girl reading a book at night', required: 'ត្រូវការ', optional: 'ជម្រើស',
     go: 'បង្កើតរូបភាព', cancel: 'បោះបង់', resume: 'បន្ត', results: 'លទ្ធផល', sent: 'ក្នុង Media Bin របស់ Timeline',
     noEp: 'សូមភ្ជាប់ Image Engine សិន (menu → Command Center → Image Engine)។', runpod: 'Image Engine ត្រូវការ Colab (ឬ server ផ្ទាល់ខ្លួន)។ RunPod serverless មិនអាចទទួល batch នេះទេ។',
     needRef: 'សូមជ្រើសរូបគំរូសិន។', needFolder: 'សូមបញ្ចូលឈ្មោះ Folder។', needCount: 'សូមបញ្ចូលចំនួន Scene។', needPrompts: 'សូមសរសេរ prompt យ៉ាងតិចមួយ។', tooMany: 'ច្រើនបំផុត 100 Scene ក្នុងមួយ batch។',
@@ -49,6 +49,8 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
   const [doneN, setDoneN] = useState(0);
   const [total, setTotal] = useState(0);
   const [err, setErr] = useState('');
+  const [failAt, setFailAt] = useState(0);
+  const [stage, setStage] = useState<'' | 'folder' | 'stopping' | 'stopped'>('');
   const [thumbs, setThumbs] = useState<{ name: string; url: string }[]>([]);
   const runId = useRef(0);
   const added = useRef(new Set<number>());   // scenes already placed in the Timeline media bin this session
@@ -66,9 +68,18 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
   else if (!folder.trim()) problem = c.needFolder;
   else if (!wanted) problem = c.needCount;
   else if (!prompts.length) problem = c.needPrompts;
-  else if (prompts.length > 100 || wanted > 100) problem = c.tooMany;
   else if (prompts.length !== wanted) problem = c.mismatch(prompts.length, wanted);
   const ready = problem === '';
+  const fname = folder.trim();
+  const sceneNo = Math.min(total || prompts.length, doneN + 1);
+  const bad = phase === 'error' || phase === 'paused';
+  const khB = language === 'kh';
+  let banner: { text: string; bad: boolean } | null = null;
+  if (bad && err) banner = { bad: true, text: khB ? `✕ ${err} · ឈប់នៅ Scene ${failAt || sceneNo}/${total || prompts.length}` : `✕ ${err} · stopped at Scene ${failAt || sceneNo}/${total || prompts.length}` };
+  else if (stage === 'folder') banner = { bad: false, text: khB ? `● កំពុងបង្កើត Folder '${fname}' ក្នុង Document...` : `● Creating folder '${fname}' in Document...` };
+  else if (busy && wake) banner = { bad: false, text: khB ? '● កំពុងបើកម៉ាស៊ីន RunPod GPU...' : '● Starting the RunPod GPU...' };
+  else if (busy) banner = { bad: false, text: khB ? `● កំពុងផលិត Scene ${sceneNo}/${total} និងរក្សាទុកចូល Folder...` : `● Generating Scene ${sceneNo}/${total} and saving to the folder...` };
+  else if (phase === 'done') banner = { bad: false, text: stage === 'stopping' ? (khB ? `✓ រួចរាល់ ${total}/${total} Scenes! កំពុងបិទម៉ាស៊ីន RunPod អូតូ...` : `✓ Done ${total}/${total} Scenes! Stopping the RunPod GPU...`) : (khB ? `✓ រួចរាល់ ${total}/${total} Scenes! ម៉ាស៊ីន RunPod បានបិទ` : `✓ Done ${total}/${total} Scenes! RunPod GPU stopped`) };
 
   /** Starts (or restarts) the GPU job for every scene not yet saved. */
   const launch = useCallback(async (r: Rec): Promise<Rec> => {
@@ -114,7 +125,8 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
         }
         if (rec.saved.length >= rec.prompts.length) {
           await api.fileOutputs('image', rec.folder, [], { folderId: rec.folderId, notify: true }).catch(() => undefined);
-          writeRec(null); setBatchProgress(null); void podRelease('image'); setPhase('done'); latest.current.onNotice(latest.current.c.done); return;
+          writeRec(null); setBatchProgress(null); setPhase('done'); setStage('stopping'); latest.current.onNotice(latest.current.c.done);
+          void Promise.resolve(podRelease('image')).catch(() => undefined).then(() => { if (live()) setStage('stopped'); }); return;
         }
         if (s.status === 'FAILED' || s.status === 'CANCELLED') throw Object.assign(new Error(s.error || 'job stopped'), { lost: true });
         if (s.status === 'DONE') throw Object.assign(new Error('incomplete'), { lost: true });   // finished but some scenes were not saved: restart those
@@ -123,7 +135,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
         const lost = (e as { lost?: boolean }).lost || !(e instanceof TypeError);       // network drop = TypeError; anything else = the GPU forgot the job
         if (!lost) { netFails += 1; if (netFails < 20) { await wait(3000); continue; } }
         try { rec = await latest.current.launch(rec); writeRec(rec); latest.current.onNotice(latest.current.c.resumed(nextIndex(rec) + 1)); netFails = 0; continue; }
-        catch { setBatchProgress(null); setPhase('paused'); setErr(latest.current.c.paused(nextIndex(rec), nextIndex(rec) + 1)); return; }
+        catch { setBatchProgress(null); setPhase('paused'); setFailAt(nextIndex(rec) + 1); setErr(latest.current.c.paused(nextIndex(rec), nextIndex(rec) + 1)); return; }
       }
     }
   }, []);
@@ -137,19 +149,22 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
 
   const generate = async () => {
     if (!ready || !cfg.ref) return;
-    setErr(''); setThumbs([]); added.current = new Set(); setPhase('busy'); setTotal(prompts.length); setDoneN(0);
+    setErr(''); setThumbs([]); added.current = new Set(); setPhase('busy'); setTotal(prompts.length); setDoneN(0); setStage('folder');
     const f = FORMATS[opts.aspect];
     const opt: ImageOptions = { width: opts.fast ? f.fastW : f.width, height: opts.fast ? f.fastH : f.height, scale: opts.similarity, steps: opts.fast ? 20 : 30, seed: opts.seed, negative: '' };
     try {
       const base: Rec = { job: { id: '', base: '', key: '' }, folder: folder.trim(), prompts, offset: 0, saved: [], opt, aspect: opts.aspect };
+      // Step 1: the Document folder exists before any image is generated.
+      const made = await api.fileOutputs('image', base.folder, [], { notify: false });
+      base.folderId = made.folderId; setStage('');
       const rec = await launch(base); writeRec(rec); void run(rec);
     } catch (e) {
       const m = e instanceof Error ? e.message : 'Failed';
-      void podRelease('image'); setWake('');
-      setPhase('error'); setErr(m === 'NO_ENDPOINT' ? c.noEp : m === 'RUNPOD' ? c.runpod : m);
+      void podRelease('image'); setWake(''); setStage('');
+      setPhase('error'); setFailAt(doneN + 1); setErr(m === 'NO_ENDPOINT' ? c.noEp : m === 'RUNPOD' ? c.runpod : m);
     }
   };
-  const cancel = async () => { runId.current += 1; const r = readRec(); writeRec(null); setBatchProgress(null); if (r) await cancelImageJob(r.job); void podRelease('image'); setWake(''); setPhase('idle'); setErr(''); };
+  const cancel = async () => { runId.current += 1; const r = readRec(); writeRec(null); setBatchProgress(null); if (r) await cancelImageJob(r.job); void podRelease('image'); setWake(''); setPhase('idle'); setErr(''); setStage(''); };
   const resumeNow = () => { const r = readRec(); if (r) void run(r); };
 
   return <section className="screen-card engine-screen image-screen">
@@ -158,20 +173,19 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
     {cfg.locked && <p className="access-help">{c.locked}</p>}
     <div className="job-fields">
       <div><label className="field-label" htmlFor="img-folder">{c.folder} <span>{c.required}</span></label><input id="img-folder" className="studio-input" value={folder} maxLength={60} disabled={active} onChange={(e) => setFolder(e.target.value.replace(/[\\/:*?"<>|]/g, '-'))} /></div>
-      <div><label className="field-label" htmlFor="img-count">{c.count} <span>{c.required}</span></label><input id="img-count" className="studio-input" inputMode="numeric" value={count} maxLength={3} placeholder="0" disabled={active} onChange={(e) => setCount(e.target.value.replace(/\D/g, '').slice(0, 3))} /></div>
+      <div><label className="field-label" htmlFor="img-count">{c.count} <span>{c.required}</span></label><input id="img-count" className="studio-input" inputMode="numeric" value={count} maxLength={5} placeholder="0" disabled={active} onChange={(e) => setCount(e.target.value.replace(/\D/g, '').slice(0, 5))} /></div>
     </div>
     <label className="field-label">{c.master} <span>{c.optional}</span></label>
     <input className="studio-input" value={master} placeholder={c.masterPh} disabled={active} onChange={(e) => setMaster(e.target.value)} />
-    <label className="field-label">{c.scripts} <span>{c.required} · {prompts.length}/100</span></label>
+    <label className="field-label">{c.scripts} <span>{c.required} · {prompts.length}</span></label>
     <textarea className="studio-textarea" value={raw} placeholder={c.scriptsPh} disabled={active} onChange={(e) => setRaw(e.target.value)} />
     <OptionsPanel language={language} opts={opts} onChange={cfg.setOpts} disabled={active} />
     {!active && phase !== 'done' && <div className={`scene-check ${ready ? 'ok' : prompts.length ? 'bad' : 'neutral'}`}>{ready ? <Check size={14} /> : <ShieldCheck size={14} />}<span>{ready ? `${c.ok} · ${prompts.length}` : problem}</span></div>}
+    {banner && <div role="status" aria-live="polite" className={`img-banner ${banner.bad ? 'text-red-400' : 'text-emerald-400'}`}>{banner.text}</div>}
     {!active && <button type="button" className="primary-button generate-button" disabled={!ready} onClick={() => void generate()}><Send size={16} /> {phase === 'done' ? `${c.go} · ${prompts.length}` : c.go}</button>}
     {busy && <div className="tl-progress"><div className="tl-bar-track"><i style={{ width: `${total ? Math.max(2, (doneN / total) * 100) : 2}%` }} /></div>
       <span>{wake ? `⚡ ${wake}` : `⏳ ${Math.min(total, doneN + 1)}/${total}`}</span><button type="button" className="text-button" onClick={() => void cancel()}><X size={13} /> {c.cancel}</button></div>}
-    {phase === 'paused' && <><div className="paused-box">⚠ {err}</div><button type="button" className="resume-button" onClick={resumeNow}><Play size={15} fill="currentColor" /> {c.resume}</button><button type="button" className="text-button" onClick={() => void cancel()}><X size={13} /> {c.cancel}</button></>}
-    {phase === 'done' && <div className="access-status ok"><Check size={13} /> {c.done}</div>}
-    {phase === 'error' && err && <div className="access-status bad">{err}</div>}
+    {phase === 'paused' && <><button type="button" className="resume-button" onClick={resumeNow}><Play size={15} fill="currentColor" /> {c.resume}</button><button type="button" className="text-button" onClick={() => void cancel()}><X size={13} /> {c.cancel}</button></>}
     {thumbs.length > 0 && <>
       <div className="tool-label">{c.results} · {thumbs.length} · {c.sent}</div>
       <ul className="img-results">{thumbs.map((t) => <li key={t.name}><img src={t.url} alt={t.name} /><span>{t.name}</span><a href={t.url} download={t.name} aria-label={`Download ${t.name}`}><Download size={13} /></a></li>)}</ul>

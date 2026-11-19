@@ -37,8 +37,8 @@ function DocItem({ d, view, thumb, selecting, selected, onToggle, onLong, onOpen
         <span className="mx-auto grid aspect-square w-full place-items-center overflow-hidden rounded-xl bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]">
           {thumb ? <img src={thumb} alt="" loading="lazy" draggable={false} className="h-full w-full object-cover" /> : iconFor(d, 40)}
         </span>
-        <span className="mt-1.5 block truncate text-xs font-medium">{d.name}</span>
-        <span className="block truncate text-[10px] text-[var(--ink-soft)]">{d.size_bytes ? fmtSize(d.size_bytes) : fmtDate(d.created_at)}</span>
+        <span className="mt-1.5 block truncate text-sm font-semibold leading-tight">{d.name}</span>
+        <span className="block truncate text-xs text-[var(--ink-soft)]">{d.size_bytes ? fmtSize(d.size_bytes) : fmtDate(d.created_at)}</span>
       </button>
       {!selecting && <button type="button" onClick={onMenu} className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-[var(--paper)]/80 text-[var(--ink-soft)]" aria-label="More"><MoreVertical size={15} /></button>}
     </li>;
@@ -63,6 +63,7 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [bulkAsk, setBulkAsk] = useState(false);       // "Delete N selected?" confirmation
   const [newName, setNewName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [selecting, setSelecting] = useState(false);
@@ -175,6 +176,26 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
       for (let i = 0; i < paths.length; i += 100) { const r = await sb.storage.from(BUCKET).remove(paths.slice(i, i + 100)); if (r.error) throw new Error(r.error.message); }
       const { error } = await sb.from('documents').delete().eq('id', d.id);
       if (error) throw new Error(error.message);
+    } catch (e) { onNotice(e instanceof Error ? e.message : 'Delete failed'); }
+    setBusy(''); void load();
+  };
+
+  /** Deletes every selected file/folder from the cloud (Storage objects first, then the rows) and from the screen. */
+  const removeSelected = async () => {
+    const chosen = shown.filter((d) => picked.has(d.id));
+    setBulkAsk(false); if (!chosen.length) return;
+    setBusy(`Deleting ${chosen.length}…`);
+    try {
+      const paths: string[] = [];
+      for (const d of chosen) {
+        if (d.kind === 'folder') paths.push(...(await collect(d.id, '')).map((f) => f.doc.storage_path!).filter(Boolean));
+        else if (d.storage_path) paths.push(d.storage_path);
+      }
+      for (let i = 0; i < paths.length; i += 100) { const r = await sb.storage.from(BUCKET).remove(paths.slice(i, i + 100)); if (r.error) throw new Error(r.error.message); }
+      const ids = chosen.map((d) => d.id);
+      for (let i = 0; i < ids.length; i += 100) { const { error } = await sb.from('documents').delete().in('id', ids.slice(i, i + 100)); if (error) throw new Error(error.message); }
+      onNotice(`Deleted ${chosen.length} item${chosen.length > 1 ? 's' : ''}`);
+      exitSelect();
     } catch (e) { onNotice(e instanceof Error ? e.message : 'Delete failed'); }
     setBusy(''); void load();
   };
@@ -297,6 +318,17 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
       </div>
     </div>}
 
+    {bulkAsk && <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 px-6" onMouseDown={() => setBulkAsk(false)}>
+      <div role="alertdialog" aria-label="Delete selected" className="w-full max-w-sm rounded-2xl bg-[var(--paper)] p-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-bold">Delete {picked.size} selected item{picked.size > 1 ? 's' : ''}?</h3>
+        <p className="mt-2 text-sm text-[var(--ink-soft)]">They are removed from your cloud storage for good. Folders are deleted with every file inside. This cannot be undone.</p>
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={() => setBulkAsk(false)} className="flex-1 rounded-xl border border-[var(--line)] py-3 text-sm font-semibold">Cancel</button>
+          <button type="button" onClick={() => void removeSelected()} className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-bold text-white">Delete {picked.size}</button>
+        </div>
+      </div>
+    </div>}
+
     {selecting && <div className="fixed inset-x-3 bottom-3 z-30 mx-auto max-w-xl rounded-2xl border border-[var(--line)] bg-[var(--paper)] px-4 py-3 shadow-[0_12px_40px_rgba(30,41,59,.28)]">
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-auto text-xs font-semibold text-[var(--ink-soft)]">{picked.size} selected</span>
@@ -305,6 +337,7 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
           : <>
             {onSendToTimeline && <button type="button" onClick={() => void sendToTimeline()} disabled={!picked.size || !!busy} className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-zinc-950 disabled:opacity-50"><Clapperboard size={16} /> Send to Timeline</button>}
             <button type="button" onClick={() => void prepareShare()} disabled={!picked.size || !!busy} className="flex items-center gap-2 rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm font-semibold text-[var(--ink)] disabled:opacity-50"><Share2 size={16} /> Share / Export</button>
+            <button type="button" onClick={() => setBulkAsk(true)} disabled={!picked.size || !!busy} className="flex items-center gap-2 rounded-xl border border-red-500/50 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50"><Trash2 size={16} /> Delete</button>
           </>}
         <button type="button" onClick={exitSelect} className="grid h-10 w-10 place-items-center rounded-xl text-[var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)]" aria-label="Cancel selection"><X size={18} /></button>
       </div>
