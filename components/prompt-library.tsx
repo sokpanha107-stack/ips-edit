@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Check, ClipboardCopy, FilePlus2, Library, Pencil, Save, Search, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ClipboardCopy, Library, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import { api, type PromptFull, type PromptSummary } from '@/lib/client/api';
 
 type Mode = 'view' | 'edit' | 'new';
@@ -71,26 +71,25 @@ export function PromptLibrary({ active, onNotice }: { active: boolean; onNotice:
 
   const shown = useMemo(() => { const n = q.trim().toLowerCase(); return n ? items.filter((i) => i.title.toLowerCase().includes(n) || i.preview.toLowerCase().includes(n)) : items; }, [items, q]);
 
-  return <section className="mx-auto w-full max-w-6xl overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--card)] text-[var(--ink)] shadow-[0_18px_50px_rgba(30,41,59,.12)]">
-    <div className="flex justify-end border-b border-[var(--line)] px-5 py-2"><span className="rounded-full border border-[var(--line)] px-3 py-1 text-xs text-[var(--ink-soft)]">{items.length} saved</span></div>
+  return <section className="doc-bleed w-full text-[var(--ink)]">
+    <div className="flex items-center gap-2 px-4 py-2"><span className="text-xs text-[var(--ink-soft)]">{items.length} saved</span><button type="button" onClick={startNew} className="ml-auto grid h-9 w-9 place-items-center rounded-full bg-amber-500 text-zinc-950" aria-label="New prompt"><Plus size={19} strokeWidth={2.6} /></button></div>
 
     {!persistent && <div className="flex items-start gap-2 border-b border-amber-500/30 bg-amber-500/10 px-5 py-2 text-xs text-amber-800"><AlertTriangle size={14} className="mt-0.5 shrink-0" />
       <span>Cloud storage is not ready, so prompts may not be saved. Run <code>supabase/schema.sql</code> in the Supabase SQL Editor.</span></div>}
     {error && <div className="border-b border-red-500/30 bg-red-500/10 px-5 py-2 text-xs text-red-700">{error}</div>}
 
-    <div className="grid h-[calc(100dvh-210px)] min-h-[460px] md:grid-cols-[320px_1fr]">
+    <div className="grid min-h-[460px] md:h-[calc(100dvh-210px)] md:grid-cols-[320px_1fr]">
       {/* left: the list */}
       <aside className={`${detailOpen ? 'hidden md:flex' : 'flex'} min-h-0 flex-col border-[var(--line)] md:border-r`}>
-        <div className="space-y-2 border-b border-[var(--line)] p-3">
-          <button type="button" onClick={startNew} className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-3 py-2.5 text-sm font-bold text-zinc-950 transition hover:bg-amber-400"><FilePlus2 size={16} /> New prompt</button>
+        <div className="px-4 pb-2">
           <label className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] px-3 py-2 text-sm text-[var(--ink-soft)] focus-within:border-amber-500/50"><Search size={14} />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the vault" className="w-full bg-transparent text-[var(--ink)] outline-none placeholder:text-[var(--ink-soft)]" /></label>
         </div>
-        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        <ul className="min-h-0 flex-1 divide-y divide-[var(--line)] overflow-y-auto border-t border-[var(--line)]">
           {loading && <li className="p-4 text-center text-sm text-[var(--ink-soft)]">Loading…</li>}
-          {!loading && shown.length === 0 && <li className="rounded-lg border border-dashed border-[var(--line)] p-6 text-center text-sm text-[var(--ink-soft)]">{items.length ? 'No match.' : 'The vault is empty. Save your first Master Prompt.'}</li>}
+          {!loading && shown.length === 0 && <li className="p-8 text-center text-sm text-[var(--ink-soft)]">{items.length ? 'No match.' : 'The vault is empty. Save your first Master Prompt.'}</li>}
           {shown.map((it) => <li key={it.id}><button type="button" onClick={() => open(it.id)}
-            className={`w-full rounded-xl border p-3 text-left transition ${current?.id === it.id && mode !== 'new' ? 'border-amber-500/60 bg-amber-500/10' : 'border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] hover:border-[var(--line)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)]'}`}>
+            className={`w-full px-4 py-3 text-left transition ${current?.id === it.id && mode !== 'new' ? 'bg-amber-500/10' : 'hover:bg-[color-mix(in_srgb,var(--ink)_5%,transparent)]'}`}>
             <div className="truncate text-sm font-semibold text-[var(--ink)]">{it.title}</div>
             <div className="mt-0.5 text-[11px] text-[var(--ink-soft)]">{fmtDate(it.created_at)} · {it.chars.toLocaleString()} chars</div>
             <p className="mt-1.5 line-clamp-2 text-xs text-[var(--ink-soft)]">{it.preview}</p></button></li>)}
@@ -103,7 +102,7 @@ export function PromptLibrary({ active, onNotice }: { active: boolean; onNotice:
 
         {mode === 'view' && current && <>
           {/* sticky control bar: the Copy button never scrolls away */}
-          <div className="sticky top-0 z-10 space-y-3 border-b border-[var(--line)] bg-[var(--card)] p-4 backdrop-blur">
+          <div className="sticky top-0 z-10 space-y-3 border-b border-[var(--line)] bg-[var(--paper)] p-4">
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setDetailOpen(false)} className="rounded-lg p-2 text-[var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--ink)_8%,transparent)] md:hidden" aria-label="Back to list"><ArrowLeft size={18} /></button>
               <h3 className="min-w-0 flex-1 truncate text-lg font-semibold">{current.title}</h3>

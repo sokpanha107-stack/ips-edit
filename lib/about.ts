@@ -9,7 +9,7 @@
 export interface AboutSection { id: string; title: string; body: string }
 
 export const ABOUT_UPDATED = '2026-11-19';
-export const ABOUT_VERSION = '1.4';
+export const ABOUT_VERSION = '1.5';
 
 export const ABOUT_INTRO = 'Atom Edit (ពីមុនឈ្មោះ IPS edit) គឺជា PWA សម្រាប់ផលិតវីដេអូដោយ AI។ វាប្រមូលផ្តុំ Script, Voice (សំឡេង), Image, Video, Timeline និង Cloud Storage ក្នុងកន្លែងតែមួយ ហើយដំណើរការលើទូរស័ព្ទ ដោយទិន្នន័យរបស់អ្នកនៅឯកជនក្នុងគណនីរបស់អ្នកផ្ទាល់។';
 
@@ -27,6 +27,7 @@ export const ABOUT_SECTIONS: AboutSection[] = [
   { id: 'prompts', title: 'Prompt Library', body: 'ទុក Prompt ដែលប្រើញឹកញាប់ ហើយចម្លងបានភ្លាម។' },
   { id: 'vault', title: 'API Key Vault', body: 'ទុក API key ទាំង 4 សេវា៖ Gemini (AI Assistant), RunPod GPU, Video Engine (ជម្រើស, បើទទេប្រើ RunPod) និង Premium Voice ដោយអ៊ិនគ្រីប (AES-256-GCM)។ កាតនីមួយៗឈរដាច់ដោយឡែក (គ្មានប្រអប់ក្រៅ) ហើយមាន switch ៖ ពេលបិទ កាតបង្ហាញតែចំណងជើង ហើយធ្លាក់ទៅក្រោមបំផុត ដើម្បីកុំឱ្យចុចលុបដោយចៃដន្យ (ការបិទនេះគ្រាន់តែលាក់កាតលើឧបករណ៍នេះ)។ Key មិនត្រូវបានផ្ញើត្រឡប់មកអេក្រង់ទេ។ ហាមដាក់ service_role key ឬ DB password ក្នុង App ឬ GitHub។' },
   { id: 'assistant', title: 'AI Assistant', body: 'ប៊ូតុង "Ask AI" នៅ header ខាងលើស្ដាំលើគ្រប់អេក្រង់ ទាល់តែ Settings និង Command Center។ សួរអំពីអេក្រង់បច្ចុប្បន្ន ឬ App ទាំងមូល ដោយវាយ ប្រើមីក្រូហ្វូន ឬផ្ញើរូប Screenshot។ អាចចុចស្តាប់ចម្លើយ។ ត្រូវដាក់ Gemini key ក្នុង Vault មុន។ មាន Safety Quota ៖ ពេលប្រើដល់ 98% ប្រព័ន្ធផ្អាកជាបណ្ដោះអាសន្ន ដើម្បីការពារការចំណាយ។' },
+  { id: 'design', title: 'ស្ទីល UI ឯកភាព (Flat & Unboxed)', body: 'គ្រប់អេក្រង់ (Prompt Library, Voice Library, Voice/Image/Video Engine, Timeline, Command Center, Settings, Document) ប្រើរចនាបថតែមួយ៖ គ្មានប្រអប់ (card) ព័ទ្ធទាំងទំព័រ, ពេញគែមអេក្រង់ (edge-to-edge), និងមានតែ១ជាន់ (single tier) ប្រើបន្ទាត់ខណ្ឌ (divider) ជំនួសប្រអប់ក្នុងប្រអប់។ GPU monitor ក្នុង Command Center ជា metric រាបស្មើ។ Prompt Library និង Voice Library មានប៊ូតុង + (បន្ថែម/Upload) និង Select ជា icon នៅខាងលើ ដូច Document។ Image Engine និង Video Engine មានរចនាសម្ព័ន្ធដូចគ្នា។ ឈ្មោះ Atom Edit និង icon ចង្កៀងដើម មិនប្រែ។' },
   { id: 'architecture', title: 'ស្ថាបត្យកម្ម និង Workflow (Architecture)', body: 'Workflow៖ Script Preparation → Voice Engine និង Image Engine (Batch 100 Scenes ម្តងមួយ Scene) → Timeline Editor → Document (Cloud Storage)។\nស្ថាបត្យកម្ម៖ PWA លើទូរស័ព្ទ (Next.js) → API លើ Vercel → Supabase (Auth, Database ដែលមាន Row Level Security, Storage) និង API Key Vault ដែលអ៊ិនគ្រីប → GPU របស់អ្នក (RunPod/Colab), Gemini, gTTS។' },
   { id: 'manual', title: 'សៀវភៅណែនាំ និង PDF', body: 'Settings → About → បើកសៀវភៅណែនាំ។ ចុច "Export PDF" ដើម្បីទាញយកសៀវភៅទំហំ A4 ដែលមាន logo, diagram និងមាតិកាពេញលេញ។ សៀវភៅនេះត្រូវបានកែប្រែរាល់ពេល App មានការផ្លាស់ប្តូរ។' },
   { id: 'practice', title: 'គន្លឹះប្រើប្រាស់ល្អបំផុត', body: '១) ដាក់ឈ្មោះ folder ឱ្យច្បាស់ ហើយបំបែក Scene ឱ្យខ្លី។ ២) សាកល្បង 3–5 Scene មុនដំណើរការ 100។ ៣) រក្សា Colab/Pod ឱ្យនៅដំណើរការពេល Render។ ៤) ប្រើ Auto-stop ដើម្បីកុំឱ្យ GPU ចំណាយពេលទំនេរ។ ៥) កុំចែក API key ក្នុង Chat។' },

@@ -40,7 +40,7 @@ function Card({ s, onChange, enabled, onToggle }: { s: VaultService; onChange: (
     : s.status === 'failed' ? { t: '🔴 Failed', c: 'border-red-500/40 bg-red-500/10 text-red-700' }
     : s.hasKey ? { t: '⚪ Not tested', c: 'border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_12%,transparent)] text-[var(--ink)]' } : { t: '⚪ Not set', c: 'border-[var(--line)] bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] text-[var(--ink-soft)]' };
 
-  return <section className="rounded-xl border border-[var(--line)] bg-[var(--card)] p-4 text-[var(--ink)]">
+  return <section className="border-b border-[var(--line)] py-4 text-[var(--ink)]">
     <div className="flex items-center gap-2">
       <KeyRound size={16} className="text-[var(--amber-deep)]" /><h4 className="text-sm font-semibold">{info.title}</h4>
       {enabled && <span className={`ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${pill.c}`}>{pill.t}</span>}
@@ -90,5 +90,5 @@ function VaultList({ services, onChange }: { services: VaultService[]; onChange:
     return next;
   });
   const sorted = [...services].sort((a, b) => Number(off.includes(a.service)) - Number(off.includes(b.service)));   // stable: switched-off cards sink to the bottom
-  return <div className="space-y-3">{sorted.map((s) => <Card key={s.service} s={s} onChange={onChange} enabled={!off.includes(s.service)} onToggle={(on) => toggle(s.service, on)} />)}</div>;
+  return <div>{sorted.map((s) => <Card key={s.service} s={s} onChange={onChange} enabled={!off.includes(s.service)} onToggle={(on) => toggle(s.service, on)} />)}</div>;
 }
