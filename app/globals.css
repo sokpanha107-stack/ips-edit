@@ -326,10 +326,7 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .ai-attach{position:relative;padding:6px 14px}
 .ai-attach img{height:64px;border-radius:10px}
 .ai-attach button{position:absolute;top:2px;left:70px;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:3px}
-.ai-input{display:flex;align-items:center;gap:6px;padding:10px 10px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
-.ai-input .studio-input{flex:1;min-width:0}
 .ai-live{color:#b3261e}
-.ai-send{background:var(--amber);color:#2a1a00;border-radius:12px}
 .ai-quota{max-width:340px;margin:auto;padding:22px;border-radius:18px;background:var(--card);border:1px solid var(--line);color:var(--ink);text-align:center;display:grid;gap:10px;justify-items:center}
 .ai-quota svg{color:var(--amber-deep)}
 .ai-quota p{font-size:14px;line-height:1.6}
@@ -417,3 +414,20 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .wm-in:disabled{opacity:.6}
 .wm-in:focus{background:color-mix(in srgb,var(--amber) 12%,transparent)}
 .wm-div{flex:none;color:var(--ink-soft);font-weight:700;user-select:none;padding:0 2px}
+
+.ai-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:8vh 0 0}
+.ai-hero h2{margin:6px 0 0;font-size:22px;font-weight:800}
+.ai-hero .ai-empty{margin:0;max-width:280px}
+.ai-foot{padding:8px 12px 10px;background:var(--paper)}
+.pb-safe{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+.ai-pill{display:flex;align-items:flex-end;gap:2px;padding:5px 6px;border-radius:999px;background:var(--cream);border:1px solid var(--line)}
+.ai-pill-btn{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:999px;color:var(--ink-soft)}
+.ai-pill-btn:active{background:color-mix(in srgb,var(--ink) 10%,transparent)}
+.ai-field{flex:1;min-width:0;resize:none;border:0;outline:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;line-height:22px;padding:8px 4px;max-height:114px}
+.ai-field::placeholder{color:var(--ink-soft)}
+.ai-send{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:999px;background:var(--amber);color:#2a1a00}
+.ai-send:disabled{opacity:.4}
+.ai-head svg:first-child{color:inherit}
+
+.ai-pill{border-radius:26px}
+.ai-pill .ai-field{border:0!important;box-shadow:none!important;outline:0!important;background:transparent!important;border-radius:0;padding:8px 4px;min-height:38px}

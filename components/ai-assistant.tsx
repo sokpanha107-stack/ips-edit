@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ImagePlus, Loader2, Mic, MicOff, Send, Sparkles, Volume2, VolumeX, X, AlertTriangle } from 'lucide-react';
+import { ArrowUp, Loader2, Mic, MicOff, Plus, Sparkles, Volume2, VolumeX, X, AlertTriangle } from 'lucide-react';
+import { LogoMark } from '@/components/atom-logo';
 
 type Msg = { role: 'user' | 'model'; text: string; image?: string };
 type Lang = 'kh' | 'en';
@@ -10,7 +11,7 @@ type Lang = 'kh' | 'en';
 const T = {
   kh: {
     short: 'សួរ AI',
-    ask: 'សួរ AI អំពីអេក្រង់នេះ ឬ App ទាំងមូល…', title: 'AI Assistant', ph: 'វាយសំណួរ…', send: 'ផ្ញើ', mic: 'និយាយ', listening: 'កំពុងស្តាប់…', image: 'ផ្ញើរូប',
+    ask: 'សួរ AI អំពីអេក្រង់នេះ ឬ App ទាំងមូល…', title: 'Atom Assistant', ph: 'សួរ Atom Assistant...', send: 'ផ្ញើ', mic: 'និយាយ', listening: 'កំពុងស្តាប់…', image: 'ផ្ញើរូប',
     noKey: 'សូមដាក់ Gemini key ក្នុង Settings → API Key Vault សិន។', thinking: 'កំពុងគិត…', listen: 'ស្តាប់ចម្លើយ', stop: 'បញ្ឈប់', noSpeech: 'ឧបករណ៍នេះមិនគាំទ្រការនិយាយទេ',
     noTts: 'ឧបករណ៍នេះគ្មានសំឡេងអានភាសាខ្មែរ។ សូមដំឡើង Khmer voice ក្នុង Settings របស់ទូរស័ព្ទ។', usage: 'ការប្រើប្រាស់ថ្ងៃនេះ', close: 'បិទ', ok: 'យល់ព្រម',
     quotaTitle: 'ដល់កម្រិតកំណត់សុវត្ថិភាព',
@@ -18,7 +19,7 @@ const T = {
   },
   en: {
     short: 'Ask AI',
-    ask: 'Ask AI about this screen or the whole app…', title: 'AI Assistant', ph: 'Type a question…', send: 'Send', mic: 'Speak', listening: 'Listening…', image: 'Attach image',
+    ask: 'Ask AI about this screen or the whole app…', title: 'Atom Assistant', ph: 'Ask Atom Assistant...', send: 'Send', mic: 'Speak', listening: 'Listening…', image: 'Attach image',
     noKey: 'Add your Gemini key in Settings → API Key Vault first.', thinking: 'Thinking…', listen: 'Read aloud', stop: 'Stop', noSpeech: 'Speech input is not supported on this device',
     noTts: 'This device has no voice for this language. Install one in your phone settings.', usage: "Today's usage", close: 'Close', ok: 'OK',
     quotaTitle: 'Safety limit reached',
@@ -52,6 +53,9 @@ export function AiAssistant({ screen, language }: { screen: string; language: La
   const recRef = useRef<{ stop: () => void } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  // the input grows with the text up to 5 lines, then scrolls
+  useLayoutEffect(() => { const el = taRef.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 5 * 22 + 4)}px`; }, [text, open]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [msgs, busy]);
   useEffect(() => {
@@ -108,11 +112,11 @@ export function AiAssistant({ screen, language }: { screen: string; language: La
   return <>
     <button type="button" className="ai-bar" onClick={() => setOpen(true)} aria-label={t.title}><Sparkles size={16} /><span>{t.short}</span></button>
     {mounted && createPortal(<>{open && <div className="ai-sheet" role="dialog" aria-label={t.title}>
-      <div className="ai-head"><Sparkles size={18} /><strong>{t.title}</strong>
+      <div className="ai-head"><LogoMark size={28} /><strong>{t.title}</strong>
         {pct !== null && <span className="ai-meter" title={t.usage}><i style={{ width: `${Math.min(100, pct)}%` }} /></span>}
         <button type="button" className="icon-button" onClick={() => { window.speechSynthesis?.cancel(); setOpen(false); }} aria-label={t.close}><X size={20} /></button></div>
       <div className="ai-body">
-        {msgs.length === 0 && <p className="ai-empty">{t.ask}</p>}
+        {msgs.length === 0 && <div className="ai-hero"><LogoMark size={84} /><h2>{t.title}</h2><p className="ai-empty">{t.ask}</p></div>}
         {msgs.map((m, i) => <div key={i} className={`ai-msg ${m.role}`}>
           {m.image && <img src={m.image} alt="" />}
           <p>{m.text}</p>
@@ -123,12 +127,16 @@ export function AiAssistant({ screen, language }: { screen: string; language: La
         <div ref={endRef} />
       </div>
       {img && <div className="ai-attach"><img src={img} alt="" /><button type="button" onClick={() => setImg(null)} aria-label={t.close}><X size={14} /></button></div>}
-      <div className="ai-input">
+      <div className="ai-foot pb-safe">
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
-        <button type="button" className="icon-button" onClick={() => fileRef.current?.click()} aria-label={t.image}><ImagePlus size={19} /></button>
-        <button type="button" className={`icon-button ${listening ? 'ai-live' : ''}`} onClick={mic} aria-label={t.mic}>{listening ? <MicOff size={19} /> : <Mic size={19} />}</button>
-        <input className="studio-input" value={text} placeholder={listening ? t.listening : t.ph} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void send(); }} />
-        <button type="button" className="icon-button ai-send" onClick={() => void send()} disabled={busy || (!text.trim() && !img)} aria-label={t.send}><Send size={19} /></button>
+        <div className="ai-pill">
+          <button type="button" className="ai-pill-btn" onClick={() => fileRef.current?.click()} aria-label={t.image}><Plus size={22} /></button>
+          <textarea ref={taRef} rows={1} className="ai-field" value={text} placeholder={listening ? t.listening : t.ph}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
+          <button type="button" className={`ai-pill-btn ${listening ? 'ai-live' : ''}`} onClick={mic} aria-label={t.mic}>{listening ? <MicOff size={20} /> : <Mic size={20} />}</button>
+          <button type="button" className="ai-send" onClick={() => void send()} disabled={busy || (!text.trim() && !img)} aria-label={t.send}><ArrowUp size={19} /></button>
+        </div>
       </div>
     </div>}
     {quota && <div className="modal-backdrop" onMouseDown={() => setQuota(null)}><div className="ai-quota" role="alertdialog" onMouseDown={(e) => e.stopPropagation()}>

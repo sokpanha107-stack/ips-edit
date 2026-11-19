@@ -43,6 +43,7 @@ function Card({ s, onChange, enabled, onToggle }: { s: VaultService; onChange: (
   return <section className="border-b border-[var(--line)] py-4 text-[var(--ink)]">
     <div className="flex items-center gap-2">
       <KeyRound size={16} className="text-[var(--amber-deep)]" /><h4 className="text-sm font-semibold">{info.title}</h4>
+      {!enabled && s.hasKey && s.status !== 'failed' && <span role="img" aria-label="Connected" title="Connected" className="ml-2 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />}
       {enabled && <span className={`ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${pill.c}`}>{pill.t}</span>}
       <span className={enabled ? '' : 'ml-auto'}><Switch on={enabled} onChange={onToggle} label={`${info.title} on/off`} /></span>
     </div>
