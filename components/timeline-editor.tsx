@@ -4,9 +4,9 @@ import { api } from '@/lib/client/api';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Download, FolderOpen, Image as ImageIcon, Lock, Music2, Mic2, Pause, Play, RectangleHorizontal, RectangleVertical, Trash2, Type, Unlock, Upload, Wand2, X } from 'lucide-react';
 import { AutoEditor } from '@/components/auto-editor';
-import { TRANSITIONS } from '@/lib/client/autoEdit';
+import { CAMERAS, OVERLAYS, TRANSITIONS } from '@/lib/client/autoEdit';
 import {
-  BUILT_IN_FONTS, buildPayload, cancelRender, canvasFor, defaultCaption, fmtTime, layout, readDropped, renderStatus, startRender, toAssets, tokenize, uid,
+  BUILT_IN_FONTS, buildPayload, defaultFx, type FxSettings, cancelRender, canvasFor, defaultCaption, fmtTime, layout, readDropped, renderStatus, startRender, toAssets, tokenize, uid,
   type AClip, type Asset, type AssetKind, type CaptionStyle, type RenderStatus, type Sub, type VClip,
 } from '@/lib/client/timeline';
 
@@ -70,7 +70,9 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const [caption, setCaption] = useState<CaptionStyle>(defaultCaption);
   const [fontAsset, setFontAsset] = useState<File | null>(null);
   const [userFonts, setUserFonts] = useState<string[]>([]);
-  const [watermark, setWatermark] = useState('@Atom_Edit');
+  const [watermark, setWatermark] = useState('Atom Edit');
+  const [fx, setFx] = useState<FxSettings>(defaultFx);
+  const setFxK = <K extends keyof FxSettings>(k: K, v: FxSettings[K]) => setFx((f) => ({ ...f, [k]: v }));
   const [wmLocked, setWmLocked] = useState(false);
   const [sel, setSel] = useState<Sel>(null);
   const [px, setPx] = useState(60);
@@ -89,8 +91,8 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const videoEl = useRef<HTMLVideoElement>(null);
 
   // remembered style + watermark (the watermark lock survives reloads so a handle is never edited by accident)
-  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (typeof p.watermark === 'string') setWatermark(p.watermark); if (p.wmLocked) setWmLocked(true); } catch { /* ignore */ } }, []);
-  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, watermark, wmLocked })); } catch { /* ignore */ } }, [caption, watermark, wmLocked]);
+  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (typeof p.watermark === 'string') setWatermark(/^(ips\s*\|\s*media|@atom_edit)$/i.test(p.watermark.trim()) ? 'Atom Edit' : p.watermark); if (p.fx) setFx({ ...defaultFx, ...p.fx }); if (p.wmLocked) setWmLocked(true); } catch { /* ignore */ } }, []);
+  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, watermark, wmLocked, fx })); } catch { /* ignore */ } }, [caption, watermark, wmLocked, fx]);
 
   const lay = useMemo(() => layout({ assets, visuals, voices, subs }), [assets, visuals, voices, subs]);
   const assetOf = useCallback((id: string) => assets.find((a) => a.id === id), [assets]);
@@ -228,7 +230,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     if (lay.voices.length && lay.total > lay.visualTotal + 0.3) onNotice(`Voiceover (${lay.total.toFixed(1)}s) is longer than the visuals (${lay.visualTotal.toFixed(1)}s): the end will be cut. Use "Match voice length".`);
     setErr(''); setRs(null); setUpPct(0); setPhase('uploading');
     try {
-      const built = buildPayload({ assets, visuals, voices, subs, musicId, musicVolume, masterPrompt, reframe, portrait, hd, caption, fontAsset, watermark });
+      const built = buildPayload({ assets, visuals, voices, subs, musicId, musicVolume, masterPrompt, reframe, portrait, hd, caption, fontAsset, watermark, fx });
       const job = await startRender(built, setUpPct);
       jobRef.current = job; setPhase('rendering'); void poll(job);
     } catch (e) {
@@ -261,7 +263,20 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
       <Zone title="Music / SFX" hint="background audio" icon={Music2} kind="music" accept="audio/*" assets={assets} onFiles={addFiles} onRemove={removeAsset} />
     </div>
 
+    <label className="tl-check tl-duck"><input type="checkbox" checked={fx.autoDuck} onChange={(e) => setFxK('autoDuck', e.target.checked)} /> Auto-Duck Music (15%) — music drops while the voice speaks, rises in pauses</label>
     <AutoEditor assets={assets} onNotice={onNotice} onAssemble={(a) => { setVisuals(a.visuals); setVoices(a.voices); setSel(null); setT(0); setPlaying(false); }} />
+
+    <details className="tl-panel">
+      <summary><Wand2 size={15} /> Motion Graphics (global)</summary>
+      <div className="tl-chips" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+        <label className="tl-check"><input type="checkbox" checked={fx.depth} onChange={(e) => setFxK('depth', e.target.checked)} /> 2.5D Depth Parallax (AI depth separates subject from background)</label>
+        <label className="tl-check"><input type="checkbox" checked={fx.autoSfx} onChange={(e) => setFxK('autoSfx', e.target.checked)} /> Auto-SFX on scene transitions (whoosh · riser · bass hit · chime)</label>
+        <label className="field-label">Camera<select className="studio-input" value={fx.camera} onChange={(e) => setFxK('camera', e.target.value)}>{CAMERAS.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</select></label>
+        <label className="field-label">Atmosphere overlay<select className="studio-input" value={fx.overlay} onChange={(e) => setFxK('overlay', e.target.value)}>{OVERLAYS.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</select></label>
+        <label className="field-label">Subtitle mode<select className="studio-input" value={fx.subMode} onChange={(e) => setFxK('subMode', e.target.value as FxSettings['subMode'])}><option value="line">1-Line (word-by-word reveal)</option><option value="block">Full Block (pop-up + word highlight)</option></select></label>
+      </div>
+      <p className="access-help">Motion uses exponential ease-out by default. A scene tag (Depth / Camera / Overlay / SFX / Subtitle) overrides these for that scene only.</p>
+    </details>
 
     {/* 2 · preview + properties */}
     <div className="tl-main">
@@ -280,6 +295,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
             {curAsset?.type === 'video' && <video ref={videoEl} src={curAsset.url} muted playsInline />}
             {!curAsset && <div className="tl-empty">Preview · {cv.w}×{cv.h}</div>}
             {watermark.trim() && <span className="tl-wm">{watermark}</span>}
+            {curVisual?.callout && <span className="tl-callout">{curVisual.callout}</span>}
             {curSub && <div className="tl-cap" style={capStyle}>
               {caption.anim === 'none' ? curSub.text : previewWords(curSub.text, curSub.start, curSub.end, t).map((w, i) =>
                 <span key={i} className={`w-${w.state}`} style={caption.anim === 'karaoke' ? { color: w.state === 'next' ? caption.color : caption.highlight } : { opacity: w.state === 'next' ? 0 : 1, display: 'inline-block', transform: w.state === 'now' ? 'scale(1.12)' : 'none', transition: 'transform .15s' }}>{w.w}</span>)}
@@ -389,7 +405,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     <details className="tl-panel" open>
       <summary><Lock size={15} /> Watermark</summary>
       <div className="tl-wm-row">
-        <input className="studio-input" value={watermark} readOnly={wmLocked} placeholder="@Atom_Edit" onChange={(e) => setWatermark(e.target.value)} aria-label="Watermark text" />
+        <input className="studio-input" value={watermark} readOnly={wmLocked} placeholder="Atom Edit" onChange={(e) => setWatermark(e.target.value)} aria-label="Watermark text" />
         <button type="button" className={`toggle ${wmLocked ? 'is-on' : ''}`} onClick={() => setWmLocked((v) => !v)} aria-pressed={wmLocked} aria-label={wmLocked ? 'Unlock watermark' : 'Lock watermark'}><span /></button>
         <span className="tl-lock">{wmLocked ? <><Lock size={13} /> Locked</> : <><Unlock size={13} /> Unlocked</>}</span>
       </div>

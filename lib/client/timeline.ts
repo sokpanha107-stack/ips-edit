@@ -4,7 +4,22 @@ import { audioDuration } from './autoEdit';
 
 export type AssetKind = 'visual' | 'voice' | 'music';
 export interface Asset { id: string; kind: AssetKind; type: 'image' | 'video' | 'audio'; file: File; url: string; name: string; duration: number; focus?: { x: number; y: number; ar: number } }
-export interface VClip { id: string; assetId: string; duration: number; prompt: string; transition?: string; transitionDur?: number }
+export interface VClip {
+  id: string; assetId: string; duration: number; prompt: string; transition?: string; transitionDur?: number;
+  /** Per-scene motion-graphic overrides from the Master Script. undefined = use the global setting. */
+  motion?: string; depth?: boolean; camera?: string; overlay?: string; callout?: string; sfx?: string; subMode?: 'line' | 'block';
+}
+/** Global Top Motion Graphic settings (per-scene tags override them). */
+export interface FxSettings { depth: boolean; camera: string; overlay: string; autoSfx: boolean; autoDuck: boolean; subMode: 'line' | 'block' }
+export const defaultFx: FxSettings = { depth: false, camera: 'none', overlay: 'none', autoSfx: false, autoDuck: true, subMode: 'line' };
+/** Auto-SFX: the sound that fits how a scene enters. The first scene has no entry sound. */
+export const autoSfxFor = (transition: string | undefined): string => {
+  const t = transition ?? 'cut';
+  if (t === 'cut') return 'bass_hit';
+  if (t.startsWith('wipe') || t.startsWith('slide')) return 'whoosh';
+  if (t === 'zoom') return 'riser';
+  return 'subtle_chime';
+};
 export interface AClip { id: string; assetId: string }
 export interface Sub { id: string; text: string }
 
@@ -117,7 +132,7 @@ export function tokenize(text: string): string[] {
 
 export interface TimelineState {
   assets: Asset[]; visuals: VClip[]; voices: AClip[]; subs: Sub[]; musicId: string | null; musicVolume: number;
-  masterPrompt: string; reframe: boolean; portrait: boolean; hd: boolean; caption: CaptionStyle; fontAsset: File | null; watermark: string;
+  masterPrompt: string; reframe: boolean; portrait: boolean; hd: boolean; caption: CaptionStyle; fontAsset: File | null; watermark: string; fx?: FxSettings;
 }
 
 export function layout(s: Pick<TimelineState, 'assets' | 'visuals' | 'voices' | 'subs'>) {
@@ -137,12 +152,25 @@ export function buildPayload(s: TimelineState) {
   const files: Record<string, File> = {};
   const keyOf = new Map<string, string>();
   const key = (prefix: string, id: string, file: File) => { if (!keyOf.has(id)) { const k = `${prefix}${keyOf.size}`; keyOf.set(id, k); files[k] = file; } return keyOf.get(id)!; };
+  const fx = s.fx ?? defaultFx;
+  const eff = lay.visuals.map((c, i) => {
+    const camera = c.camera ?? fx.camera, overlay = c.overlay ?? fx.overlay;
+    const sfx = c.sfx ?? (fx.autoSfx && i > 0 ? autoSfxFor(c.transition) : 'none');
+    return { depth: c.depth ?? fx.depth, camera, overlay, callout: c.callout ?? null, sfx: sfx === 'none' ? null : sfx, subtitleMode: c.subMode ?? fx.subMode };
+  });
   const payload = {
     canvas: canvasFor(s.portrait, s.hd), reframe: s.reframe, masterPrompt: s.masterPrompt.trim(),
-    visuals: lay.visuals.map((c) => ({ file: key('v', c.assetId, asset(c.assetId).file), kind: asset(c.assetId).type, duration: c.duration, prompt: c.prompt.trim(), transition: c.transition ?? 'cut', transitionDur: c.transitionDur ?? 0.5 })),
+    visuals: lay.visuals.map((c, i) => ({ file: key('v', c.assetId, asset(c.assetId).file), kind: asset(c.assetId).type, duration: c.duration, prompt: c.prompt.trim(), transition: c.transition ?? 'cut', transitionDur: c.transitionDur ?? 0.5, motion: c.motion ?? (c.prompt.trim().replace(/\s+/g, '_') || 'static'), start: c.start, fx: eff[i] })),
     voices: lay.voices.map((c) => ({ file: key('a', c.assetId, asset(c.assetId).file), start: c.start, duration: c.duration })),
-    music: s.musicId ? { file: key('m', s.musicId, asset(s.musicId).file), volume: s.musicVolume } : null,
-    subtitles: lay.subs.map((c) => ({ start: c.start, end: c.end, text: c.text, words: tokenize(c.text) })),
+    music: s.musicId ? { file: key('m', s.musicId, asset(s.musicId).file), volume: s.musicVolume, duck: fx.autoDuck } : null,
+    subtitles: lay.subs.map((c, i) => ({ start: c.start, end: c.end, text: c.text, words: tokenize(c.text), mode: eff[i]?.subtitleMode ?? fx.subMode })),
+    motionGraphics: {
+      easing: 'exponential_out',
+      depth: { enabled: eff.some((e) => e.depth), model: 'depth-anything', defaultOn: fx.depth },
+      camera: fx.camera, overlay: fx.overlay, subtitleMode: fx.subMode,
+      autoSfx: fx.autoSfx,
+      ducking: { enabled: fx.autoDuck && !!s.musicId, musicLevel: 0.15, attackMs: 120, releaseMs: 600 },
+    },
     caption: { ...s.caption, fontFile: s.fontAsset ? 'font0' : null },
     watermark: { text: s.watermark.trim() },
   };

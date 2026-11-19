@@ -23,30 +23,92 @@ export async function audioDuration(file: File | Blob, url?: string): Promise<nu
 
 export const MOTIONS = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'pan_up', 'pan_down', 'static'] as const;
 export const TRANSITIONS = ['cut', 'fade', 'dissolve', 'fadeblack', 'wipe_left', 'wipe_right', 'slide_left', 'slide_right', 'zoom'] as const;
-const MOTION_ALIAS: Record<string, string> = { none: 'static', still: 'static', zoomin: 'zoom_in', zoomout: 'zoom_out', panleft: 'pan_left', panright: 'pan_right', panup: 'pan_up', pandown: 'pan_down' };
-const TRANS_ALIAS: Record<string, string> = { none: 'cut', crossfade: 'fade', cross_fade: 'fade', cross_dissolve: 'dissolve', fade_black: 'fadeblack', dip_to_black: 'fadeblack', wipeleft: 'wipe_left', wiperight: 'wipe_right', slideleft: 'slide_left', slideright: 'slide_right', zoom_in: 'zoom', zoomin: 'zoom' };
-const norm = (v: string) => v.trim().replace(/^\[|\]$/g, '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+export const CAMERAS = ['none', 'handheld_breath', 'impact_shake', 'smooth_glide'] as const;
+export const OVERLAYS = ['none', 'dust_particles', 'light_leak', 'rain', 'film_grain', 'vignette'] as const;
+export const SFXS = ['none', 'whoosh', 'riser', 'bass_hit', 'subtle_chime'] as const;
+export type SubMode = 'line' | 'block';
 
-/** The one accepted line shape:  [Scene X] | Image: filename.jpg | Motion: [Motion_Type] | Transition: [Transition_Type] */
-export const LINE = /^\s*\[\s*Scene\s+(\d+)\s*\]\s*\|\s*Image\s*:\s*(.+?)\s*\|\s*Motion\s*:\s*(.+?)\s*\|\s*Transition\s*:\s*(.+?)\s*$/i;
+/** Every lookup key is lower-cased with all spaces, "-" and "_" removed, so "Zoom In", "zoom_in" and "ZOOM-IN" are the same word. */
+const squash = (v: string) => v.trim().replace(/^\[|\]$/g, '').trim().toLowerCase().replace(/[^a-z0-9.]+/g, '');
+const mapOf = (list: readonly string[], extra: Record<string, string> = {}) => {
+  const m: Record<string, string> = {}; list.forEach((x) => { m[squash(x)] = x; }); Object.entries(extra).forEach(([k, v]) => { m[squash(k)] = v; }); return m;
+};
+const MOTION_MAP = mapOf(MOTIONS, { none: 'static', still: 'static', 'zoom in': 'zoom_in', 'zoom out': 'zoom_out', 'pan left': 'pan_left', 'pan right': 'pan_right', 'pan up': 'pan_up', 'pan down': 'pan_down' });
+const TRANS_MAP = mapOf(TRANSITIONS, { none: 'cut', crossfade: 'dissolve', 'cross fade': 'dissolve', 'cross dissolve': 'dissolve', 'fade black': 'fadeblack', 'fade to black': 'fadeblack', 'dip to black': 'fadeblack', 'zoom in': 'zoom' });
+const CAMERA_MAP = mapOf(CAMERAS, { off: 'none', breath: 'handheld_breath', handheld: 'handheld_breath', shake: 'impact_shake', impact: 'impact_shake', glide: 'smooth_glide', smooth: 'smooth_glide' });
+const OVERLAY_MAP = mapOf(OVERLAYS, { off: 'none', dust: 'dust_particles', particles: 'dust_particles', leak: 'light_leak', grain: 'film_grain' });
+const SFX_MAP = mapOf(SFXS, { off: 'none', chime: 'subtle_chime', hit: 'bass_hit', bass: 'bass_hit' });
+const KEY_MAP: Record<string, 'image' | 'motion' | 'transition' | 'depth' | 'camera' | 'overlay' | 'callout' | 'sfx' | 'subtitle'> = {
+  image: 'image', img: 'image', file: 'image', motion: 'motion', move: 'motion', transition: 'transition', depth: 'depth', parallax: 'depth', camera: 'camera', overlay: 'overlay', callout: 'callout', sfx: 'sfx', sound: 'sfx', subtitle: 'subtitle', subtitles: 'subtitle', caption: 'subtitle',
+};
 
-export interface SceneSpec { line: number; n: number; image: string; motion: string; transition: string }
+/** Accepted shape (only Scene + Image are required; the rest are optional and may come in any order):
+ *  [Scene X] | Image: filename.jpg | Motion: ... | Transition: ... | Depth: ... | Camera: ... | Overlay: ... | Callout: "..." | SFX: ... | Subtitle: ... */
+export const FORMAT_FULL = '[Scene X] | Image: filename.jpg | Motion: ... | Transition: ... | Depth: on/off | Camera: ... | Overlay: ... | Callout: "text" | SFX: ... | Subtitle: ...';
+export const SCENE_TAG = /^\s*\[?\s*scene\s*[_ -]?(\d+)\s*\]?\s*$/i;
+
+export interface SceneSpec {
+  line: number; n: number; image: string; motion: string; transition: string;
+  depth?: boolean; camera?: string; overlay?: string; callout?: string; sfx?: string; subtitle?: SubMode;
+}
 export interface ParseIssue { line: number; text: string; reason: string }
+
+/** Splits on "|" but keeps a "|" that sits inside quotes (callout text). */
+export function splitFields(t: string): string[] {
+  const out: string[] = []; let cur = '', q = '';
+  for (const ch of t) {
+    if (q) { if (ch === q) q = ''; cur += ch; } else if (ch === '"' || ch === '“' || ch === '”') { q = ch === '“' ? '”' : ch; cur += ch; } else if (ch === '|') { out.push(cur); cur = ''; } else cur += ch;
+  }
+  out.push(cur); return out.map((x) => x.trim());
+}
+const unquote = (v: string) => v.trim().replace(/^["“”']+|["“”']+$/g, '').trim();
+
+function parseDepth(v: string): boolean | undefined {
+  const k = squash(v);
+  if (['on', 'true', 'yes', '1', '2.5d', '2.5dparallax', 'parallax'].includes(k)) return true;
+  if (['off', 'false', 'no', '0', 'none'].includes(k)) return false;
+  return undefined;
+}
+function parseSub(v: string): SubMode | undefined {
+  const k = squash(v);
+  if (k.startsWith('1line') || k.startsWith('oneline') || k.startsWith('line') || k.startsWith('wordbyword')) return 'line';
+  if (k.startsWith('fullblock') || k.startsWith('block') || k.startsWith('full')) return 'block';
+  return undefined;
+}
 
 export function parseMasterScript(text: string): { scenes: SceneSpec[]; issues: ParseIssue[] } {
   const scenes: SceneSpec[] = [], issues: ParseIssue[] = [];
   text.split(/\r?\n/).forEach((raw, i) => {
     const t = raw.trim();
     if (!t || t.startsWith('#') || t.startsWith('//')) return;
-    const m = LINE.exec(t);
-    if (!m) { issues.push({ line: i + 1, text: t, reason: 'Does not match: [Scene X] | Image: file.jpg | Motion: type | Transition: type' }); return; }
-    const motion = MOTION_ALIAS[norm(m[3])] ?? norm(m[3]);
-    const transition = TRANS_ALIAS[norm(m[4])] ?? norm(m[4]);
-    const image = m[2].trim().replace(/^\[|\]$/g, '').trim();
-    if (!(MOTIONS as readonly string[]).includes(motion)) { issues.push({ line: i + 1, text: t, reason: `Unknown motion "${m[3].trim()}". Use: ${MOTIONS.join(', ')}` }); return; }
-    if (!(TRANSITIONS as readonly string[]).includes(transition)) { issues.push({ line: i + 1, text: t, reason: `Unknown transition "${m[4].trim()}". Use: ${TRANSITIONS.join(', ')}` }); return; }
-    if (scenes.some((s) => s.n === Number(m[1]))) { issues.push({ line: i + 1, text: t, reason: `Scene ${Number(m[1])} appears twice` }); return; }
-    scenes.push({ line: i + 1, n: Number(m[1]), image, motion, transition });
+    const bad = (reason: string) => { issues.push({ line: i + 1, text: t, reason }); };
+    const parts = splitFields(t);
+    const tag = SCENE_TAG.exec(parts[0]);
+    if (!tag) return bad('Line must start with [Scene X] and use " | " between fields. ' + FORMAT_FULL);
+    const n = Number(tag[1]);
+    const f: Partial<Record<string, string>> = {};
+    for (const part of parts.slice(1)) {
+      if (!part) continue;
+      const c = part.indexOf(':');
+      if (c < 1) return bad(`Cannot read "${part}". Write each field as Name: value.`);
+      const key = KEY_MAP[squash(part.slice(0, c))];
+      if (!key) return bad(`Unknown field "${part.slice(0, c).trim()}". Use: Image, Motion, Transition, Depth, Camera, Overlay, Callout, SFX, Subtitle.`);
+      f[key] = part.slice(c + 1).trim();
+    }
+    if (!f.image) return bad('Missing "Image: filename".');
+    const motion = f.motion === undefined ? 'static' : MOTION_MAP[squash(f.motion)];
+    if (!motion) return bad(`Unknown motion "${f.motion}". Use: ${MOTIONS.join(', ')}`);
+    const transition = f.transition === undefined ? 'cut' : TRANS_MAP[squash(f.transition)];
+    if (!transition) return bad(`Unknown transition "${f.transition}". Use: ${TRANSITIONS.join(', ')}`);
+    const sc: SceneSpec = { line: i + 1, n, image: unquote(f.image), motion, transition };
+    if (f.depth !== undefined) { const d = parseDepth(f.depth); if (d === undefined) return bad(`Depth must be on or off (got "${f.depth}").`); sc.depth = d; }
+    if (f.camera !== undefined) { const v = CAMERA_MAP[squash(f.camera)]; if (!v) return bad(`Unknown camera "${f.camera}". Use: ${CAMERAS.join(', ')}`); sc.camera = v; }
+    if (f.overlay !== undefined) { const v = OVERLAY_MAP[squash(f.overlay)]; if (!v) return bad(`Unknown overlay "${f.overlay}". Use: ${OVERLAYS.join(', ')}`); sc.overlay = v; }
+    if (f.sfx !== undefined) { const v = SFX_MAP[squash(f.sfx)]; if (!v) return bad(`Unknown SFX "${f.sfx}". Use: ${SFXS.join(', ')}`); sc.sfx = v; }
+    if (f.subtitle !== undefined) { const v = parseSub(f.subtitle); if (!v) return bad('Subtitle must start with "1-Line" or "Full Block".'); sc.subtitle = v; }
+    if (f.callout !== undefined && unquote(f.callout)) sc.callout = unquote(f.callout);
+    if (scenes.some((x) => x.n === n)) return bad(`Scene ${n} appears twice`);
+    scenes.push(sc);
   });
   return { scenes, issues };
 }
@@ -77,7 +139,7 @@ export function assemble(scenes: SceneSpec[], assets: Asset[], transitionLen = 0
     if (!au) out.warnings.push(`Scene ${s.n}: no audio file found, using 5 s.`);
     else if (dur <= 0) out.warnings.push(`Scene ${s.n}: could not read the length of "${au.name}", using 5 s.`);
     if (dur <= 0) dur = 5;
-    out.visuals.push({ id: uid(), assetId: img.id, duration: dur, prompt: s.motion.replace(/_/g, ' '), transition: i === 0 ? 'cut' : s.transition, transitionDur: transitionLen });
+    out.visuals.push({ id: uid(), assetId: img.id, duration: dur, prompt: s.motion.replace(/_/g, ' '), motion: s.motion, transition: i === 0 ? 'cut' : s.transition, transitionDur: transitionLen, depth: s.depth, camera: s.camera, overlay: s.overlay, callout: s.callout, sfx: s.sfx, subMode: s.subtitle });
     if (au) out.voices.push({ id: uid(), assetId: au.id });
   });
   return out;
