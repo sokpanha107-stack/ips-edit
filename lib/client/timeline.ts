@@ -9,6 +9,21 @@ export interface VClip {
   /** Per-scene motion-graphic overrides from the Master Script. undefined = use the global setting. */
   motion?: string; depth?: boolean; camera?: string; overlay?: string; callout?: string; sfx?: string; subMode?: 'line' | 'block';
 }
+/**
+ * Floating "ghost" watermark. ONE definition shared by the live preview and the render server (render_api.py uses the same numbers):
+ * size 2.5% of the shorter side, white @ 28% with a 1px black @ 35% shadow, bouncing diagonally (triangle waves) at vx 55 / vy 42 px/s
+ * measured on a 720px short side and scaled with the resolution.
+ */
+export const WM = { sizePct: 2.5, opacity: 0.28, shadowOpacity: 0.35, vx: 55, vy: 42, marginPct: 3.5 } as const;
+/** Top-left position (output pixels) of a text box tw x th at time t. Triangle wave: 0 -> range -> 0, never a short loop because vx and vy differ. */
+export function wmPosition(t: number, W: number, H: number, tw: number, th: number): { x: number; y: number } {
+  const short = Math.min(W, H), k = short / 720, m = short * WM.marginPct / 100;
+  const rx = Math.max(1, W - tw - 2 * m), ry = Math.max(1, H - th - 2 * m);
+  const tri = (u: number, r: number) => r - Math.abs((((u % (2 * r)) + 2 * r) % (2 * r)) - r);
+  return { x: m + tri(WM.vx * k * t + 0.12 * rx, rx), y: m + tri(WM.vy * k * t + 0.33 * ry, ry) };
+}
+export const wmFontPx = (W: number, H: number) => Math.round(Math.min(W, H) * WM.sizePct / 100);
+
 /** Global Top Motion Graphic settings (per-scene tags override them). */
 export interface FxSettings { depth: boolean; camera: string; overlay: string; autoSfx: boolean; autoDuck: boolean; /** 'style' = follow the Caption style animation (default) */ subMode: 'style' | 'line' | 'block' }
 export const defaultFx: FxSettings = { depth: false, camera: 'none', overlay: 'none', autoSfx: false, autoDuck: true, subMode: 'style' };
@@ -132,7 +147,7 @@ export function tokenize(text: string): string[] {
 
 export interface TimelineState {
   assets: Asset[]; visuals: VClip[]; voices: AClip[]; subs: Sub[]; musicId: string | null; musicVolume: number;
-  masterPrompt: string; reframe: boolean; portrait: boolean; hd: boolean; caption: CaptionStyle; fontAsset: File | null; watermark: string; fx?: FxSettings;
+  masterPrompt: string; reframe: boolean; portrait: boolean; hd: boolean; caption: CaptionStyle; fontAsset: File | null; watermark: string; wmOn?: boolean; fx?: FxSettings;
 }
 
 export function layout(s: Pick<TimelineState, 'assets' | 'visuals' | 'voices' | 'subs'>) {
@@ -172,7 +187,10 @@ export function buildPayload(s: TimelineState) {
       ducking: { enabled: fx.autoDuck && !!s.musicId, musicLevel: 0.15, attackMs: 120, releaseMs: 600 },
     },
     caption: { ...s.caption, fontFile: s.fontAsset ? 'font0' : null },
-    watermark: { text: s.watermark.trim() },
+    // Anti-theft ghost watermark. OFF => empty text so any worker hides it. The motion constants are mirrored in worker/render/render_api.py.
+    watermark: (s.wmOn ?? true) && s.watermark.trim()
+      ? { text: s.watermark.trim(), enabled: true, style: 'ghost', ...WM }
+      : { text: '', enabled: false },
   };
   if (s.fontAsset) files.font0 = s.fontAsset;
   return { payload, files, total: lay.visualTotal };

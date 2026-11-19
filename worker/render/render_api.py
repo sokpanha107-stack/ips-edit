@@ -202,6 +202,26 @@ def wrap_tokens(tokens, max_chars):
     return breaks
 
 
+def watermark_filter(cfg: dict, W: int, H: int, fontfile: str | None) -> str:
+    """Anti-theft ghost watermark as ONE drawtext filter (no extra passes, NVENC-friendly).
+    Size 2.5% of the shorter side, white@0.28 + black@0.35 1px shadow, bouncing diagonally with triangle waves
+    (vx 55 / vy 42 px/s on a 720px short side, scaled with resolution). Mirrors wmPosition() in lib/client/timeline.ts.
+    A payload without style 'ghost' (older client) keeps the legacy fixed top-left mark."""
+    ff = f'fontfile={fontfile}:' if fontfile else ''
+    if cfg.get('style') != 'ghost':
+        return f'drawtext=textfile=wm.txt:{ff}x=w*0.04:y=h*0.035:fontsize=h*0.032:fontcolor=white@0.88:shadowcolor=black@0.6:shadowx=2:shadowy=2'
+    short = min(W, H); k = short / 720.0
+    size = max(8, round(short * float(cfg.get('sizePct', 2.5)) / 100))
+    m = short * float(cfg.get('marginPct', 3.5)) / 100
+    vx, vy = float(cfg.get('vx', 55)) * k, float(cfg.get('vy', 42)) * k
+    op, sop = float(cfg.get('opacity', 0.28)), float(cfg.get('shadowOpacity', 0.35))
+    rx, ry = f'max(1,w-text_w-{2 * m:.2f})', f'max(1,h-text_h-{2 * m:.2f})'
+    # triangle wave 0 -> R -> 0 :  R - abs(mod(u, 2R) - R)
+    x = f"{m:.2f}+{rx}-abs(mod({vx:.4f}*t+0.12*{rx},2*({rx}))-{rx})"
+    y = f"{m:.2f}+{ry}-abs(mod({vy:.4f}*t+0.33*{ry},2*({ry}))-{ry})"
+    return f"drawtext=textfile=wm.txt:{ff}fontsize={size}:fontcolor=white@{op}:shadowcolor=black@{sop}:shadowx=1:shadowy=1:x='{x}':y='{y}'"
+
+
 def build_ass(subs, cap, W, H, family, callouts=None):
     size = max(10, int(round(H * float(cap.get('size', 5.5)) / 100)))
     outline = float(cap.get('outlineWidth', 3)) * H / 720
@@ -531,7 +551,8 @@ def render_job(jid: str):
                     callouts.append((c, a0, min(starts[i] + durs[i] - 0.15, a0 + 4.0), float(v.get('_subject', 0.5))))
         if subs or callouts:
             (wd / 'subs.ass').write_text(build_ass(subs, cap, W, H, family, callouts), encoding='utf-8')
-        wm = (P.get('watermark') or {}).get('text', '').strip()
+        wmc = P.get('watermark') or {}
+        wm = (wmc.get('text', '') if wmc.get('enabled', True) else '').strip()          # OFF => nothing is drawn
         ff = find_font(user_font)
         if wm: (wd / 'wm.txt').write_text(wm, encoding='utf-8')
 
@@ -549,7 +570,7 @@ def render_job(jid: str):
         def final_pass(safe: bool):
             vfs = []
             if subs or callouts: vfs.append('ass=subs.ass:fontsdir=fonts')
-            if wm: vfs.append(f"drawtext=textfile=wm.txt:{'fontfile=' + ff + ':' if ff else ''}x=w*0.04:y=h*0.035:fontsize=h*0.032:fontcolor=white@0.88:shadowcolor=black@0.6:shadowx=2:shadowy=2")
+            if wm: vfs.append(watermark_filter(wmc, W, H, ff))
             inputs, fc, labels = ['-i', 'joined.mp4'], [], []
             n_in = 1
             for a in P.get('voices') or []:

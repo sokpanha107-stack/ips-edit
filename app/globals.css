@@ -239,7 +239,7 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .tl-canvas-wrap.portrait .tl-canvas { height:min(58dvh,480px); }.tl-canvas-wrap.landscape .tl-canvas { width:100%; max-width:640px; }
 .tl-canvas img, .tl-canvas video { width:100%; height:100%; object-fit:cover; display:block; }
 .tl-empty { position:absolute; inset:0; display:grid; place-items:center; color:#8a93a3; font-size:12px; }
-.tl-wm { position:absolute; left:4%; top:3.5%; color:rgba(255,255,255,.88); font-size:3.2cqh; text-shadow:1px 1px 2px rgba(0,0,0,.7); pointer-events:none; }
+.tl-wm { position:absolute; left:0; top:0; color:#fff; white-space:nowrap; line-height:1.15; will-change:left,top; pointer-events:none; }
 .tl-cap { position:absolute; left:6%; right:6%; text-align:center; line-height:1.35; pointer-events:none; }
 .tl-transport { display:flex; align-items:center; gap:10px; margin-top:8px; }.tl-transport input { flex:1; }.tl-time { font-size:11px; color:var(--ink-soft); white-space:nowrap; }
 .tl-props { border:1px solid var(--line); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; align-self:start; background:rgba(255,255,255,.1); }

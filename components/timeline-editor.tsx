@@ -3,11 +3,11 @@
 import { api, getVideoEndpoint } from '@/lib/client/api';
 import { getPod, podAcquire, podRelease } from '@/lib/client/pod';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Download, FolderOpen, Image as ImageIcon, Lock, Music2, Mic2, Pause, Play, RectangleHorizontal, RectangleVertical, Trash2, Type, Unlock, Upload, Wand2, X } from 'lucide-react';
+import { Clapperboard, Download, FolderOpen, Image as ImageIcon, Ghost, Music2, Mic2, Pause, Play, RectangleHorizontal, RectangleVertical, Trash2, Type, Upload, Wand2, X } from 'lucide-react';
 import { AutoEditor } from '@/components/auto-editor';
 import { CAMERAS, OVERLAYS, TRANSITIONS } from '@/lib/client/autoEdit';
 import {
-  BUILT_IN_FONTS, buildPayload, defaultFx, type FxSettings, cancelRender, canvasFor, defaultCaption, fmtTime, layout, readDropped, renderStatus, startRender, toAssets, tokenize, uid,
+  BUILT_IN_FONTS, buildPayload, wmFontPx, wmPosition, WM, defaultFx, type FxSettings, cancelRender, canvasFor, defaultCaption, fmtTime, layout, readDropped, renderStatus, startRender, toAssets, tokenize, uid,
   type AClip, type Asset, type AssetKind, type CaptionStyle, type RenderStatus, type Sub, type VClip,
 } from '@/lib/client/timeline';
 
@@ -79,7 +79,10 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const [saved, setSaved] = useState<'' | 'yes' | 'no'>('');
   const [fx, setFx] = useState<FxSettings>(defaultFx);
   const setFxK = <K extends keyof FxSettings>(k: K, v: FxSettings[K]) => setFx((f) => ({ ...f, [k]: v }));
-  const [wmLocked, setWmLocked] = useState(false);
+  const [wmOn, setWmOn] = useState(true);            // ON by default; OFF hides it everywhere but keeps the saved text
+  const wmEl = useRef<HTMLSpanElement | null>(null);
+  const canvasEl = useRef<HTMLDivElement | null>(null);
+  const wmDrift = useRef(0);
   const [sel, setSel] = useState<Sel>(null);
   const [px, setPx] = useState(60);
   const [t, setT] = useState(0);
@@ -97,9 +100,9 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const musicEl = useRef<HTMLAudioElement>(null);
   const videoEl = useRef<HTMLVideoElement>(null);
 
-  // remembered style + watermark (the watermark lock survives reloads so a handle is never edited by accident)
-  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (typeof p.wmLeft === 'string') { setWmLeft(p.wmLeft); setWmRight(String(p.wmRight ?? '')); } else if (typeof p.watermark === 'string' && !/^(ips\s*\|\s*media|@atom_edit|atom edit)$/i.test(p.watermark.trim())) { const [l, ...r] = p.watermark.split('|'); setWmLeft(l.trim()); setWmRight(r.join('|').trim()); } if (p.fx) setFx({ ...defaultFx, ...p.fx }); if (p.wmLocked) setWmLocked(true); } catch { /* ignore */ } }, []);
-  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, wmLeft, wmRight, wmLocked, fx })); } catch { /* ignore */ } }, [caption, wmLeft, wmRight, wmLocked, fx]);
+  // remembered style + watermark text + ON/OFF
+  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (typeof p.wmLeft === 'string') { setWmLeft(p.wmLeft); setWmRight(String(p.wmRight ?? '')); } else if (typeof p.watermark === 'string' && !/^(ips\s*\|\s*media|@atom_edit|atom edit)$/i.test(p.watermark.trim())) { const [l, ...r] = p.watermark.split('|'); setWmLeft(l.trim()); setWmRight(r.join('|').trim()); } if (p.fx) setFx({ ...defaultFx, ...p.fx }); if (p.wmOn === false) setWmOn(false); } catch { /* ignore */ } }, []);
+  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, wmLeft, wmRight, wmOn, fx })); } catch { /* ignore */ } }, [caption, wmLeft, wmRight, wmOn, fx]);
 
   const lay = useMemo(() => layout({ assets, visuals, voices, subs }), [assets, visuals, voices, subs]);
   const assetOf = useCallback((id: string) => assets.find((a) => a.id === id), [assets]);
@@ -188,6 +191,22 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const curVoice = lay.voices.find((c) => t >= c.start && t < c.start + c.duration);
   const curSub = lay.subs.find((c) => t >= c.start && t < c.end);
   const curAsset = curVisual ? assetOf(curVisual.assetId) : undefined;
+  const cv = canvasFor(portrait, hd);
+  // Ghost watermark: same triangle-wave bounce as the render server. Playing => exact playback time; paused => drifts gently so the effect is visible.
+  const placeWm = useCallback((time: number) => {
+    const el = wmEl.current, box = canvasEl.current; if (!el || !box) return;
+    const kk = box.clientHeight / cv.h || 1;                      // preview px per output px
+    const { x, y } = wmPosition(time, cv.w, cv.h, el.offsetWidth / kk, el.offsetHeight / kk);
+    el.style.left = `${(x / cv.w) * 100}%`; el.style.top = `${(y / cv.h) * 100}%`;
+  }, [cv.w, cv.h]);
+  useEffect(() => { placeWm(playing ? t : t + wmDrift.current); }, [t, playing, placeWm, wmOn, watermark, portrait, hd, curAsset?.id]);
+  useEffect(() => {
+    if (!wmOn || playing) return;
+    let raf = 0, last = performance.now();
+    const loop = (now: number) => { wmDrift.current += Math.min(0.1, (now - last) / 1000) * 0.5; last = now; placeWm(t + wmDrift.current); raf = requestAnimationFrame(loop); };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [wmOn, playing, t, placeWm]);
   useEffect(() => {
     const el = voiceEl.current; if (!el) return;
     const a = curVoice ? assetOf(curVoice.assetId) : undefined;
@@ -242,7 +261,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     cancelWake.current = false; setErr(''); setRs(null); setUpPct(0); setSaved(''); setPhase('uploading');
     try {
       await podAcquire('render', getVideoEndpoint().url, setWake, () => cancelWake.current); setWake('');
-      const built = buildPayload({ assets, visuals, voices, subs, musicId, musicVolume, masterPrompt, reframe, portrait, hd, caption, fontAsset, watermark, fx });
+      const built = buildPayload({ assets, visuals, voices, subs, musicId, musicVolume, masterPrompt, reframe, portrait, hd, caption, fontAsset, watermark, wmOn, fx });
       if (cancelWake.current) throw new Error('cancelled');
       const job = await startRender(built, setUpPct);
       jobRef.current = job; setPhase('rendering'); void poll(job);
@@ -255,7 +274,6 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   };
   const doCancel = async () => { cancelWake.current = true; const j = jobRef.current; jobRef.current = null; if (j) await cancelRender(j); void podRelease('render'); setWake(''); setPhase('idle'); setRs(null); };
 
-  const cv = canvasFor(portrait, hd);
   const ratio = `${cv.w} / ${cv.h}`;
   const busy = phase === 'uploading' || phase === 'rendering';
   const ticks = useMemo(() => { const step = px >= 90 ? 1 : px >= 40 ? 2 : 5; return Array.from({ length: Math.floor(total / step) + 2 }, (_, i) => i * step); }, [px, total]);
@@ -305,11 +323,11 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
           <label className="tl-check"><input type="checkbox" checked={hd} onChange={(e) => setHd(e.target.checked)} /> 1080p</label>
         </div>
         <div className={`tl-canvas-wrap ${portrait ? 'portrait' : 'landscape'}`}>
-          <div className="tl-canvas" style={{ aspectRatio: ratio }}>
+          <div className="tl-canvas" ref={canvasEl} style={{ aspectRatio: ratio }}>
             {curAsset?.type === 'image' && <img src={curAsset.url} alt="" style={reframe && curAsset.focus ? { objectPosition: focusPos(curAsset.focus, cv.w / cv.h) } : undefined} />}
             {curAsset?.type === 'video' && <video ref={videoEl} src={curAsset.url} muted playsInline />}
             {!curAsset && <div className="tl-empty">Preview · {cv.w}×{cv.h}</div>}
-            {watermark.trim() && <span className="tl-wm">{watermark}</span>}
+            {wmOn && watermark.trim() && <span className="tl-wm" ref={wmEl} style={{ fontSize: `${(wmFontPx(cv.w, cv.h) / cv.h) * 100}cqh`, opacity: WM.opacity, textShadow: `1px 1px 0 rgba(0,0,0,${WM.shadowOpacity})` }}>{watermark}</span>}
             {curVisual?.callout && <span className="tl-callout">{curVisual.callout}</span>}
             {curSub && <div className="tl-cap" style={capStyle}>
               {caption.anim === 'none' ? curSub.text : previewWords(curSub.text, curSub.start, curSub.end, t).map((w, i) =>
@@ -418,17 +436,17 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
 
     {/* 6 · watermark */}
     <details className="tl-panel" open>
-      <summary><Lock size={15} /> Watermark</summary>
+      <summary><Ghost size={15} /> Watermark</summary>
       <div className="tl-wm-row">
         <div className="wm-split">
-          <input className="wm-in" value={wmLeft} disabled={wmLocked} maxLength={40} placeholder="Atom" onChange={(e) => setWmLeft(e.target.value)} aria-label="Watermark left text" />
+          <input className="wm-in" value={wmLeft} maxLength={40} placeholder="Atom" onChange={(e) => setWmLeft(e.target.value)} aria-label="Watermark left text" />
           <span className="wm-div" aria-hidden="true">|</span>
-          <input className="wm-in" value={wmRight} disabled={wmLocked} maxLength={40} placeholder="Feel" onChange={(e) => setWmRight(e.target.value)} aria-label="Watermark right text" />
+          <input className="wm-in" value={wmRight} maxLength={40} placeholder="Feel" onChange={(e) => setWmRight(e.target.value)} aria-label="Watermark right text" />
         </div>
-        <button type="button" className={`toggle ${wmLocked ? 'is-on' : ''}`} onClick={() => setWmLocked((v) => !v)} aria-pressed={wmLocked} aria-label={wmLocked ? 'Unlock watermark' : 'Lock watermark'}><span /></button>
-        <span className="tl-lock">{wmLocked ? <><Lock size={13} /> Locked</> : <><Unlock size={13} /> Unlocked</>}</span>
+        <button type="button" role="switch" className={`toggle ${wmOn ? 'is-on' : ''}`} onClick={() => setWmOn((v) => !v)} aria-checked={wmOn} aria-label={wmOn ? 'Turn watermark off' : 'Turn watermark on'}><span /></button>
+        <span className="tl-lock">{wmOn ? 'ON' : 'OFF'}</span>
       </div>
-      <p className="access-help">Left | Right, for example your YouTube | Facebook channel names. The divider is fixed. Placed at the top-left corner and burned into the export. Lock it so it cannot be edited by accident.</p>
+      <p className="access-help">Left | Right, for example your YouTube | Facebook channel names (the divider is fixed). ON: a small translucent ghost watermark floats diagonally across the whole frame in the preview and in the export, so it cannot be cropped or covered. OFF: hidden everywhere; your text stays saved.</p>
     </details>
 
     {/* 7 · export */}
