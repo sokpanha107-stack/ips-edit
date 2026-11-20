@@ -15,7 +15,7 @@ function Arrow({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: num
   return <g stroke={C.amber} strokeWidth={2} fill="none" strokeLinecap="round"><line x1={x1} y1={y1} x2={x2} y2={y2 - 6} /><path d={`M${x2 - 5} ${y2 - 8} L${x2} ${y2 - 1} L${x2 + 5} ${y2 - 8}`} /></g>;
 }
 
-/** Content workflow: Script → Voice/Image → Batch (any scene count) → Timeline → Cloud. */
+/** Content workflow: Script → Voice/Image → Batch (unlimited scenes) → Timeline → Omni-Worker Render → Cloud. */
 export function WorkflowDiagram() {
   return <svg viewBox="0 0 360 560" width="100%" role="img" aria-label="Atom Edit workflow" style={{ display: 'block', background: C.bg, borderRadius: 16 }}>
     <Box x={90} y={14} w={180} h={50} title="Script Preparation" sub="AI assist · breath · scenes · hand-off" />
@@ -24,13 +24,13 @@ export function WorkflowDiagram() {
     <Box x={186} y={96} w={160} h={60} title="Image Engine" sub="1 image / scene" accent />
     <Arrow x1={94} y1={156} x2={150} y2={196} />
     <Arrow x1={266} y1={156} x2={210} y2={196} />
-    <Box x={50} y={196} w={260} h={64} title="Batch Processing · up to 100 scenes" sub="one by one · auto-saved · resumes" accent />
+    <Box x={50} y={196} w={260} h={64} title="Batch Processing · Unlimited Scenes" sub="Autonomous Resume · auto-saved" accent />
     <Arrow x1={180} y1={260} x2={180} y2={298} />
-    <Box x={90} y={298} w={180} h={50} title="RunPod Pod · Render" sub="auto start/stop · NVENC · FX" />
+    <Box x={90} y={298} w={180} h={50} title="Timeline Editor" sub="Master Script · 2.5D · FX · SFX" />
     <Arrow x1={180} y1={348} x2={180} y2={386} />
-    <Box x={90} y={386} w={180} h={50} title="Timeline Editor" sub="Master Script · 2.5D · FX · SFX" />
+    <Box x={70} y={386} w={220} h={50} title="RunPod Omni-Worker · Render" sub="1 GPU · NVENC · fire-and-forget" />
     <Arrow x1={180} y1={436} x2={180} y2={474} />
-    <Box x={60} y={474} w={240} h={56} title="Document · Cloud Storage" sub="sorted 1,2,3…10 · Send to Timeline · Share" />
+    <Box x={60} y={474} w={240} h={56} title="Document · Cloud Storage" sub="saved by the GPU · notification · Pod stops" />
     <Box x={8} y={298} w={72} h={50} title="Music" sub="own voice" accent />
     <Arrow x1={44} y1={348} x2={64} y2={474} />
     <circle cx={338} cy={22} r={5} fill={C.green} />
@@ -58,7 +58,7 @@ export function ArchitectureDiagram() {
     <Box x={190} y={346} w={162} h={56} title="External engines" sub="called by the server" accent />
     <Arrow x1={271} y1={402} x2={271} y2={430} />
     <Box x={8} y={430} w={110} h={60} title="Gemini" sub="AI Assistant" />
-    <Box x={125} y={430} w={110} h={60} title="RunPod / Colab" sub="Video · Image" />
-    <Box x={242} y={430} w={110} h={60} title="Voice" sub="gTTS · Premium" />
+    <Box x={125} y={430} w={110} h={60} title="RunPod Omni" sub="Image·Music·Render" />
+    <Box x={242} y={430} w={110} h={60} title="Voice · Alerts" sub="gTTS · Push · Telegram" />
   </svg>;
 }

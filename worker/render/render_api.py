@@ -784,7 +784,7 @@ def register(app, public_url=lambda: ''):
         j = JOBS.get(jid)
         if not j: return JSONResponse({'ok': False, 'error': 'unknown job'}, status_code=404)
         return {'ok': True, 'status': j['status'], 'progress': j['progress'], 'stage': j['stage'], 'error': j.get('error'),
-                'url': f"{public_url()}/files/render/{j['file']}" if j.get('file') else None}
+                'url': f"{public_url()}/files/render/{j['file']}" if j.get('file') else None, 'saved': bool(j.get('saved'))}
 
     @app.post('/render/cancel/{jid}')
     def cancel(jid: str):

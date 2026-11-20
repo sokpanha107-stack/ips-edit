@@ -3,6 +3,7 @@
  * Music Engine client: local script parser + the strict 7-step pipeline orchestrator.
  * Audio never goes through Vercel: browser -> RunPod (CORS) and RunPod -> Supabase Storage (signed upload URL).
  */
+import { ensureGpu } from './gpu';
 import { getEngineEndpoint } from '@/lib/client/api';
 import { getPod, podAcquire, podHealthBase, podRelease } from '@/lib/client/pod';
 import { browserClient } from '@/lib/supabase/browser';
@@ -80,6 +81,11 @@ async function fallbackSave(rec: MusicRec): Promise<void> {
 }
 
 /** Polls an already-started job to the end (also used to resume after the phone was locked). Always releases the GPU lease. */
+/** The locked watermark brand (Timeline → Watermark → 🔒): the only name ever written into the MP3 tags. Empty when unlocked. */
+function lockedBrand(): string {
+  try { const w = JSON.parse(localStorage.getItem('ips-tl-prefs') ?? '{}').wm; if (!w?.locked) return ''; return (w.mode === 'full' ? String(w.full ?? '') : [w.left, w.right].filter((x: string) => x && x.trim()).join(' | ')).trim().slice(0, 80); } catch { return ''; }
+}
+
 export async function followJob(rec: MusicRec, on: (s: StepState) => void, cancelled: () => boolean): Promise<void> {
   let fails = 0;
   const upd = (p: Partial<StepState>) => on({ step: 3, percent: 15, logs: [], error: '', done: false, elapsed: Math.round((Date.now() - rec.startedAt) / 1000), ...p });
@@ -124,6 +130,7 @@ export async function startSong(input: MusicJobInput, on: (s: StepState) => void
     const slot = await pr.json().catch(() => ({})) as { error?: string; name: string; path: string; uploadUrl: string; token: string };
     if (!pr.ok) throw new Error(slot.error || `prepare failed (${pr.status})`);
     upd({ step: 2, percent: 5, logs: [stepLog(2)] });
+    await ensureGpu();
     const { base, key } = musicBase();
     await podAcquire('music', getEngineEndpoint('music').url, (m) => upd({ step: 2, percent: 10, logs: [stepLog(2), m ? `⚡ ${m}` : ''] }), cancelled);
     const p = input.parsed;
@@ -131,7 +138,7 @@ export async function startSong(input: MusicJobInput, on: (s: StepState) => void
     f.append('signature_voice', input.voice, input.voice.name);
     if (input.adapter) f.append('rvc_index', input.adapter, input.adapter.name);
     f.append('params', JSON.stringify({ title: slot.name.replace(/\.mp3$/, ''), lyrics: p.lyrics, style_prompt: p.style, bpm: p.bpm, key: p.key, mix_preset: input.preset === 'auto' ? p.mix : input.preset,
-      vocal_gender: input.register, pitch_shift: input.pitch, duration_lock: input.lock, duration_sec: LOCK_SECONDS, seed: input.seed, package5: p.pkg5, package6: p.pkg6 }));
+      vocal_gender: input.register, pitch_shift: input.pitch, duration_lock: input.lock, duration_sec: LOCK_SECONDS, seed: input.seed, package5: p.pkg5, package6: p.pkg6, brand: lockedBrand() }));
     f.append('signed_upload_url', slot.uploadUrl);
     f.append('complete_callback_url', `${location.origin}/api/music/complete`);
     f.append('complete_token', slot.token);

@@ -15,14 +15,28 @@ export interface VClip {
  * measured on a 720px short side and scaled with the resolution.
  */
 export const WM = { sizePct: 2.5, opacity: 0.28, shadowOpacity: 0.35, vx: 55, vy: 42, marginPct: 3.5 } as const;
-/** Top-left position (output pixels) of a text box tw x th at time t. Triangle wave: 0 -> range -> 0, never a short loop because vx and vy differ. */
-export function wmPosition(t: number, W: number, H: number, tw: number, th: number): { x: number; y: number } {
+/** White-label watermark settings (v2.4). `mode` full = ONE full name, split = "Left | Right". Lock freezes everything and is persisted. */
+export type WmPlacement = 'ghost' | 'tl' | 'tr' | 'bl' | 'br';
+export interface WmCfg { mode: 'split' | 'full'; left: string; right: string; full: string; mark: 'text' | 'logo' | 'both'; placement: WmPlacement; opacity: number; sizePct: number; locked: boolean; logoData: string | null }
+export const defaultWm: WmCfg = { mode: 'split', left: 'Atom', right: 'Feel', full: '', mark: 'text', placement: 'ghost', opacity: WM.opacity, sizePct: WM.sizePct, locked: false, logoData: null };
+export const WM_DIVIDER = ' | ';
+/** The text that is drawn / written into the metadata. Split mode never leaves a dangling divider. */
+export const wmText = (c: Pick<WmCfg, 'mode' | 'left' | 'right' | 'full'>) => (c.mode === 'full' ? c.full.trim() : [c.left.trim(), c.right.trim()].filter(Boolean).join(WM_DIVIDER));
+export function dataUrlToFile(d: string, name: string): File {
+  const [h, b] = d.split(','); const mime = /data:(.*?);/.exec(h)?.[1] ?? 'image/png'; const bin = atob(b); const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new File([u], name, { type: mime });
+}
+/** Top-left position (output pixels) of a box tw x th at time t. ghost = triangle wave 0 -> range -> 0 (never a short loop because vx and vy differ);
+ *  tl / tr / bl / br = fixed corner. Mirrors _wm_xy() in worker/render/render_api.py so Preview and FFmpeg match 1:1. */
+export function wmPosition(t: number, W: number, H: number, tw: number, th: number, placement: WmPlacement = 'ghost'): { x: number; y: number } {
   const short = Math.min(W, H), k = short / 720, m = short * WM.marginPct / 100;
+  if (placement !== 'ghost') return { x: placement[1] === 'l' ? m : W - tw - m, y: placement[0] === 't' ? m : H - th - m };
   const rx = Math.max(1, W - tw - 2 * m), ry = Math.max(1, H - th - 2 * m);
   const tri = (u: number, r: number) => r - Math.abs((((u % (2 * r)) + 2 * r) % (2 * r)) - r);
   return { x: m + tri(WM.vx * k * t + 0.12 * rx, rx), y: m + tri(WM.vy * k * t + 0.33 * ry, ry) };
 }
-export const wmFontPx = (W: number, H: number) => Math.round(Math.min(W, H) * WM.sizePct / 100);
+export const wmFontPx = (W: number, H: number, sizePct: number = WM.sizePct) => Math.round(Math.min(W, H) * sizePct / 100);
 
 /** Global Top Motion Graphic settings (per-scene tags override them). */
 export interface FxSettings { depth: boolean; camera: string; overlay: string; autoSfx: boolean; autoDuck: boolean; /** 'style' = follow the Caption style animation (default) */ subMode: 'style' | 'line' | 'block' }
@@ -147,7 +161,7 @@ export function tokenize(text: string): string[] {
 
 export interface TimelineState {
   assets: Asset[]; visuals: VClip[]; voices: AClip[]; subs: Sub[]; musicId: string | null; musicVolume: number;
-  masterPrompt: string; reframe: boolean; portrait: boolean; hd: boolean; caption: CaptionStyle; fontAsset: File | null; watermark: string; wmOn?: boolean; fx?: FxSettings;
+  masterPrompt: string; reframe: boolean; portrait: boolean; hd: boolean; caption: CaptionStyle; fontAsset: File | null; watermark: string; wmOn?: boolean; wm?: WmCfg; fx?: FxSettings;
 }
 
 export function layout(s: Pick<TimelineState, 'assets' | 'visuals' | 'voices' | 'subs'>) {
@@ -159,6 +173,17 @@ export function layout(s: Pick<TimelineState, 'assets' | 'visuals' | 'voices' | 
   const voices = s.voices.map((c) => { const d = dur(c.assetId); const r = { ...c, start: a, duration: d }; a += d; return r; });
   const subs = s.subs.map((c, i) => ({ ...c, start: voices[i]?.start ?? 0, end: voices[i] ? voices[i].start + voices[i].duration : 0 })).filter((c) => c.end > c.start);
   return { visuals, voices, subs, total: Math.max(total, a), visualTotal: total };
+}
+
+function wmPayload(s: TimelineState) {
+  const c = s.wm;
+  const text = c ? wmText(c) : s.watermark.trim();
+  const mark = c?.mark ?? 'text', logo = !!(c?.logoData) && mark !== 'text';
+  const on = (s.wmOn ?? true) && ((mark !== 'logo' && !!text) || logo);
+  if (!on) return { text: '', enabled: false, mark: 'text', placement: 'ghost', logoFile: null as string | null, brand: '' };
+  const placement = c?.placement ?? 'ghost';
+  return { text: mark === 'logo' ? '' : text, enabled: true, mark, style: placement === 'ghost' ? 'ghost' : 'fixed', placement, ...WM, opacity: c?.opacity ?? WM.opacity, sizePct: c?.sizePct ?? WM.sizePct,
+    logoFile: logo ? 'wmlogo' : null, brand: c?.locked ? text : '' };
 }
 
 export function buildPayload(s: TimelineState) {
@@ -187,16 +212,15 @@ export function buildPayload(s: TimelineState) {
       ducking: { enabled: fx.autoDuck && !!s.musicId, musicLevel: 0.15, attackMs: 120, releaseMs: 600 },
     },
     caption: { ...s.caption, fontFile: s.fontAsset ? 'font0' : null },
-    // Anti-theft ghost watermark. OFF => empty text so any worker hides it. The motion constants are mirrored in worker/render/render_api.py.
-    watermark: (s.wmOn ?? true) && s.watermark.trim()
-      ? { text: s.watermark.trim(), enabled: true, style: 'ghost', ...WM }
-      : { text: '', enabled: false },
+    // White-label watermark (text and/or PNG logo). OFF => empty so any worker hides it. Brand (locked name) is the ONLY thing written into the file metadata.
+    watermark: wmPayload(s),
   };
   if (s.fontAsset) files.font0 = s.fontAsset;
+  if (payload.watermark.logoFile && s.wm?.logoData) files.wmlogo = dataUrlToFile(s.wm.logoData, 'wmlogo.png');
   return { payload, files, total: lay.visualTotal };
 }
 
-export interface RenderStatus { status: 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED'; progress: number; stage: string; error?: string | null; url?: string | null }
+export interface RenderStatus { status: 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED'; progress: number; stage: string; error?: string | null; url?: string | null; saved?: boolean }
 
 const baseOf = (u: string) => u.trim().replace(/\/+$/, '');
 const headersOf = (key: string): Record<string, string> => (key ? { Authorization: `Bearer ${key}` } : {});
@@ -232,7 +256,7 @@ export async function renderStatus(job: { id: string; base: string; key: string 
   const d = await res.json();
   if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`);
   const url: string | null = d.url ? (/^https?:/.test(d.url) ? d.url : `${job.base}${d.url}`) : null;
-  return { status: d.status, progress: d.progress ?? 0, stage: d.stage ?? '', error: d.error, url };
+  return { status: d.status, progress: d.progress ?? 0, stage: d.stage ?? '', error: d.error, url, saved: !!d.saved };
 }
 
 export async function cancelRender(job: { id: string; base: string; key: string }) {

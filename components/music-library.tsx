@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Clapperboard, Music2, Pause, Pencil, Play, Plus, Trash2, X } from 'lucide-react';
-import { addMusic, deleteMusic, getMusicBlob, listMusic, renameMusic, type MusicMeta } from '@/lib/client/musicStore';
+import { addMusic, deleteMusic, getMusicBlob, listMusic, renameMusic, syncMusic, type MusicMeta } from '@/lib/client/musicStore';
 
 const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const mb = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
@@ -15,7 +15,7 @@ export function MusicLibrary({ onNotice, onUse }: { onNotice: (m: string) => voi
   const [ask, setAsk] = useState<MusicMeta | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
-  const load = useCallback(async () => { try { setTracks(await listMusic()); } catch { onNotice('Music storage is unavailable.'); } }, [onNotice]);
+  const load = useCallback(async () => { try { setTracks(await listMusic()); if (await syncMusic()) setTracks(await listMusic()); } catch { onNotice('Music storage is unavailable.'); } }, [onNotice]);
   useEffect(() => { void load(); return () => audio.current?.pause(); }, [load]);
 
   const add = async (files: FileList | null) => {
@@ -43,7 +43,7 @@ export function MusicLibrary({ onNotice, onUse }: { onNotice: (m: string) => voi
       <button type="button" className="music-play" aria-label={playing === m.id ? 'Pause' : 'Play'} onClick={() => void play(m)}>{playing === m.id ? <Pause size={18} /> : <Play size={18} />}</button>
       <div className="music-meta">{edit?.id === m.id
         ? <input className="studio-input" autoFocus value={edit.name} onChange={(e) => setEdit({ id: m.id, name: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') void rename(); }} />
-        : <strong>{m.name}</strong>}<small>{m.seconds ? fmt(m.seconds) : '--:--'} · {mb(m.size)}</small></div>
+        : <strong>{m.name}</strong>}<small>{m.seconds ? fmt(m.seconds) : '--:--'} · {mb(m.size)} · {m.where === 'both' ? '☁ synced' : m.where === 'cloud' ? '☁ cloud' : m.where === 'local' ? '⚠ this device only' : ''}</small></div>
       {edit?.id === m.id ? <><button type="button" className="icon-button" aria-label="Save name" onClick={() => void rename()}><Check size={17} /></button><button type="button" className="icon-button" aria-label="Cancel" onClick={() => setEdit(null)}><X size={17} /></button></>
         : <><button type="button" className="icon-button" aria-label="Use in Timeline" title="Use in Timeline" onClick={() => void use(m)}><Clapperboard size={17} /></button><button type="button" className="icon-button" aria-label="Rename" onClick={() => setEdit({ id: m.id, name: m.name })}><Pencil size={16} /></button><button type="button" className="icon-button" aria-label="Delete" onClick={() => setAsk(m)}><Trash2 size={16} /></button></>}
     </li>)}</ul>
