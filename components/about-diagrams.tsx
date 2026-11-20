@@ -31,6 +31,8 @@ export function WorkflowDiagram() {
     <Box x={90} y={386} w={180} h={50} title="Timeline Editor" sub="Master Script · 2.5D · FX · SFX" />
     <Arrow x1={180} y1={436} x2={180} y2={474} />
     <Box x={60} y={474} w={240} h={56} title="Document · Cloud Storage" sub="sorted 1,2,3…10 · Send to Timeline · Share" />
+    <Box x={8} y={298} w={72} h={50} title="Music" sub="own voice" accent />
+    <Arrow x1={44} y1={348} x2={64} y2={474} />
     <circle cx={338} cy={22} r={5} fill={C.green} />
   </svg>;
 }

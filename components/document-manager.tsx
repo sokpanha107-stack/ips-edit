@@ -55,7 +55,7 @@ function DocItem({ d, view, thumb, selecting, selected, onToggle, onLong, onOpen
 }
 
 /** Cloud-first file explorer. Bytes live in the private Supabase Storage bucket "documents"; nothing is kept on the device until you press Extract to ZIP. */
-export function DocumentManager({ active, onNotice, onSendToTimeline }: { active: boolean; onNotice: (m: string) => void; onSendToTimeline?: (files: File[]) => Promise<void> | void }) {
+export function DocumentManager({ active, onNotice, onSendToTimeline, onSendMusic }: { active: boolean; onNotice: (m: string) => void; onSendToTimeline?: (files: File[]) => Promise<void> | void; onSendMusic?: (f: File) => Promise<void> | void }) {
   const sb = browserClient();
   const [trail, setTrail] = useState<{ id: string | null; name: string }[]>([{ id: null, name: 'All files' }]);
   const [items, setItems] = useState<Doc[]>([]);
@@ -112,8 +112,14 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
     void load();
   };
 
+  const [listen, setListen] = useState<{ doc: Doc; url: string } | null>(null);   // inline player for .mp3 (e.g. Music Engine songs)
   const openFile = async (d: Doc) => {
     if (!d.storage_path) return;
+    if (d.mime?.startsWith('audio/')) {
+      const r = await sb.storage.from(BUCKET).createSignedUrl(d.storage_path, 3600);
+      if (r.error || !r.data) onNotice(r.error?.message ?? 'Could not open'); else setListen({ doc: d, url: r.data.signedUrl });
+      return;
+    }
     const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(d.storage_path, 300, { download: d.kind === 'zip' ? d.name : undefined });
     if (error || !data) onNotice(error?.message ?? 'Could not open'); else window.open(data.signedUrl, '_blank', 'noopener');
   };
@@ -315,6 +321,18 @@ export function DocumentManager({ active, onNotice, onSendToTimeline }: { active
         {confirm === menu.id
           ? <div className="flex gap-2 px-1 pt-1"><button type="button" onClick={() => { const d = menu; setMenu(null); void remove(d); }} className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-bold text-white">Confirm delete</button><button type="button" onClick={() => setConfirm(null)} className="rounded-xl px-4 py-3 text-sm text-[var(--ink-soft)]">Cancel</button></div>
           : <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-red-600" onClick={() => setConfirm(menu.id)}><Trash2 size={18} /> Delete</button>}
+      </div>
+    </div>}
+
+    {listen && <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 px-6" onMouseDown={() => setListen(null)}>
+      <div role="dialog" aria-label={listen.doc.name} className="w-full max-w-sm rounded-2xl bg-[var(--paper)] p-5 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+        <h3 className="truncate text-base font-bold">{listen.doc.name}</h3>
+        <audio controls autoPlay src={listen.url} className="mt-3 w-full" />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <a href={listen.url} download={listen.doc.name} className="flex-1 rounded-xl border border-[var(--line)] py-3 text-center text-sm font-semibold">Download .mp3</a>
+          {onSendMusic && <button type="button" className="flex-1 rounded-xl bg-amber-500 py-3 text-sm font-bold text-white" onClick={async () => { const r = await sb.storage.from(BUCKET).download(listen.doc.storage_path!); if (r.error || !r.data) { onNotice(r.error?.message ?? 'Download failed'); return; } setListen(null); await onSendMusic(new File([r.data], listen.doc.name, { type: 'audio/mpeg' })); }}>Send to Timeline</button>}
+        </div>
+        <button type="button" className="mt-2 w-full py-2 text-sm text-[var(--ink-soft)]" onClick={() => setListen(null)}>Close</button>
       </div>
     </div>}
 

@@ -16,8 +16,8 @@ export function getVideoEndpoint(): VideoEndpoint {
 export function setVideoEndpoint(ep: VideoEndpoint) { try { window.localStorage.setItem(VIDEO_EP, JSON.stringify({ url: ep.url.trim(), key: ep.key.trim() })); } catch { /* storage unavailable */ } }
 
 const IMAGE_EP = 'ips-image-endpoint';
-export type EngineKind = 'video' | 'image';
-const EP_KEY: Record<'image', string> = { image: IMAGE_EP };
+export type EngineKind = 'video' | 'image' | 'music';
+const EP_KEY: Record<'image' | 'music', string> = { image: IMAGE_EP, music: 'ips-music-endpoint' };
 export const getEngineEndpoint = (k: EngineKind): VideoEndpoint => {
   if (k === 'video') return getVideoEndpoint();
   try { const v = JSON.parse(window.localStorage.getItem(EP_KEY[k]) ?? '{}'); return { url: String(v.url ?? ''), key: String(v.key ?? '') }; } catch { return { url: '', key: '' }; }
