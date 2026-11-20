@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { onHandoff } from '@/lib/client/handoff';
 import { Wand2 } from 'lucide-react';
 import { assemble, CAMERAS, FORMAT_FULL, MOTIONS, OVERLAYS, parseMasterScript, SFXS, TRANSITIONS, type Assembly } from '@/lib/client/autoEdit';
 import type { Asset } from '@/lib/client/timeline';
@@ -12,6 +13,8 @@ export function AutoEditor({ assets, onAssemble, onNotice }: { assets: Asset[]; 
   const [text, setText] = useState('');
   const [tlen, setTlen] = useState(0.5);
   const [report, setReport] = useState<{ errors: string[]; warnings: string[]; ok?: string } | null>(null);
+  // Script Preparation -> one master-script line per transferred scene (image names match the Image Engine output)
+  useEffect(() => onHandoff('timeline', (sc) => { setText(sc.map((_, i) => `[Scene ${i + 1}] | Image: scene-${String(i + 1).padStart(3, '0')}.png`).join('\n')); setReport(null); onNotice(`${sc.length} scenes loaded into the Master Script`); }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const voices = assets.filter((a) => a.kind === 'voice');
   const images = assets.filter((a) => a.kind === 'visual');
   const parsed = useMemo(() => parseMasterScript(text), [text]);

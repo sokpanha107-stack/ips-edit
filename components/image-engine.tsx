@@ -1,6 +1,7 @@
 'use client';
 
 import { podAcquire, podRelease } from '@/lib/client/pod';
+import { onHandoff } from '@/lib/client/handoff';
 import { setBatchProgress } from '@/lib/client/progress';
 import { api, getEngineEndpoint } from '@/lib/client/api';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -59,10 +60,14 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
   useEffect(() => { try { const d = JSON.parse(localStorage.getItem(DRAFT) ?? '{}'); if (typeof d.raw === 'string') setRaw(d.raw); if (typeof d.master === 'string') setMaster(d.master); if (typeof d.folder === 'string') setFolder(d.folder); if (typeof d.count === 'string') setCount(d.count); } catch { /* ignore */ } setDraftLoaded(true); }, []);
   useEffect(() => { if (!draftLoaded) return; try { localStorage.setItem(DRAFT, JSON.stringify({ raw, master, folder, count })); } catch { /* ignore */ } }, [draftLoaded, raw, master, folder, count]);
 
+  // Script Preparation -> Batch scripts + exact scene count (ignored while a batch is running)
+  const activeRef = useRef(false);
+  useEffect(() => onHandoff('image', (sc) => { if (activeRef.current) { latest.current.onNotice('A batch is running: finish or cancel it first.'); return; } setRaw(sc.join('\n')); setCount(String(sc.length)); }), []);
   const prompts = parsePrompts(raw, master);
   const wanted = Number(count);
   const busy = phase === 'busy';
   const active = busy || phase === 'paused';
+  activeRef.current = active;
   let problem = '';
   if (!cfg.ref) problem = c.needRef;
   else if (!folder.trim()) problem = c.needFolder;

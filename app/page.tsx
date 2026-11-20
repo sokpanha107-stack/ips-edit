@@ -14,6 +14,7 @@ import { DEFAULT_FEATURES, isOn, loadFeatures, saveFeatures, FEATURE_LABEL, type
 import { TimelineEditor, type TimelineHandle } from '@/components/timeline-editor';
 import { ImageEngine } from '@/components/image-engine';
 import { PromptLibrary } from '@/components/prompt-library';
+import { sendHandoff } from '@/lib/client/handoff';
 import { MusicLibrary } from '@/components/music-library';
 import { LibraryTabs, type LibraryTab } from '@/components/library-tabs';
 import { CommandCenter } from '@/components/command-center';
@@ -329,7 +330,11 @@ export default function Home() {
   const renderScreen = () => { if (activeTab === 'script' || activeTab === 'prompts' || activeTab === 'music' || activeTab === 'documents' || activeTab === 'timeline' || activeTab === 'image') return null; if (activeTab === 'voices') return <><LibTabs /><VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onAdd={addVoiceFile} onNotice={showNotice} /></>; if (activeTab === 'video') return <EngineWorkspace key="video" blocked={runpodReady ? undefined : (vault ? 'Add your RunPod key + Endpoint ID in Settings → API Key Vault to use the Video Engine.' : 'Loading…')} type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} cfg={videoCfg} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
   const items = navItems(t);
 
-  const sendScript = (target: 'kh' | 'en' | 'video', text: string) => updateDraft(target, { script: text, count: String(splitScenes(text).length || drafts[target].count) });
+  /** Script Preparation -> the real engines: Voice (language + queue), Image Engine (batch scripts + exact count), Timeline (Master Script lines). */
+  const sendScript = (target: 'kh' | 'en' | 'image' | 'timeline', scenes: string[]) => {
+    if (target === 'kh' || target === 'en') { updateDraft(target, { script: scenes.join('\n'), count: String(scenes.length) }); lastVoiceRef.current = target; setActiveTab(target); return; }
+    sendHandoff(target, scenes); setActiveTab(target);
+  };
   const go = (id: Tab) => { setActiveTab(id); setMenuOpen(false); };
   const on = (id: FeatureId) => isOn(features, id);
   const firstTab = (): Tab => { for (const f of features) { if (!f.on) continue; if (f.id === 'voice') return 'kh'; if (f.id !== 'command') return f.id as Tab; } return 'timeline'; };

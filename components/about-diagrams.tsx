@@ -15,10 +15,10 @@ function Arrow({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: num
   return <g stroke={C.amber} strokeWidth={2} fill="none" strokeLinecap="round"><line x1={x1} y1={y1} x2={x2} y2={y2 - 6} /><path d={`M${x2 - 5} ${y2 - 8} L${x2} ${y2 - 1} L${x2 + 5} ${y2 - 8}`} /></g>;
 }
 
-/** Content workflow: Script → Voice/Image → Batch (100 scenes) → Timeline → Cloud. */
+/** Content workflow: Script → Voice/Image → Batch (any scene count) → Timeline → Cloud. */
 export function WorkflowDiagram() {
   return <svg viewBox="0 0 360 560" width="100%" role="img" aria-label="Atom Edit workflow" style={{ display: 'block', background: C.bg, borderRadius: 16 }}>
-    <Box x={90} y={14} w={180} h={50} title="Script Preparation" sub="write · split · translate" />
+    <Box x={90} y={14} w={180} h={50} title="Script Preparation" sub="AI assist · breath · scenes · hand-off" />
     <Arrow x1={180} y1={64} x2={180} y2={96} />
     <Box x={14} y={96} w={160} h={60} title="Voice Engine" sub="KH | EN · 1 audio / scene" accent />
     <Box x={186} y={96} w={160} h={60} title="Image Engine" sub="1 image / scene" accent />

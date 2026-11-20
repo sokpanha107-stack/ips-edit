@@ -1,15 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, ArrowLeftRight, ClipboardPaste, Copy, Languages, ListChecks, Play, RefreshCw, Scissors, Square, Volume2, X } from 'lucide-react';
-import { api, splitScenes } from '@/lib/client/api';
-import { breakScript, detectLang, PRESET_MAX, type Lang, type Preset } from '@/lib/client/scriptTools';
+import { AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeftRight, ArrowUp, ClipboardPaste, Copy, Languages, ListChecks, Play, Scissors, Square, Volume2, X } from 'lucide-react';
+import { api } from '@/lib/client/api';
+import { detectLang, detectScenes, formatBreath, tidy, type Breath, type Lang } from '@/lib/client/scriptTools';
+import { LogoMark } from '@/components/atom-logo';
 
 const copy = {
   en: {
     check: 'Check', pasteHere: 'Paste text', arranged: 'Arranged lines', rearrange: 'Re-arrange', edited: 'Edited by hand. Re-arrange rebuilds it from the pasted text.', alignLeft: 'Left', alignCenter: 'Center', alignRight: 'Right', useAsInput: 'Use as input',
     playAll: 'Play All', stopAll: 'Stop', addScene: 'Add scene', prepare: 'Script Preparation', sendTo: 'Send to', sentTo: 'Sent to', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'Break into lines', undo: 'Undo', copyScript: 'Copy Script', useResult: 'Use as script', lineCount: 'lines',
-    format: 'Format', translate: 'Translate', preview: 'Preview',
+    format: 'Format', translate: 'Translate', preview: 'Preview', aiAssist: 'AI Assist', formatBreath: 'Format Breath / Clauses', breath: 'Breath', bShort: 'Short', bNatural: 'Natural', bStory: 'Story', scenesWord: 'Scenes', allText: 'Full script (all scenes)', imageEngine: 'Image Engine', timelineEditor: 'Timeline Editor', moveUp: 'Move up', moveDown: 'Move down', aiDone: 'Atom AI Assist: scenes arranged', nothingToFormat: 'Paste or write a script first',
     formatTitle: 'Script formatter', rawPh: 'Paste your raw script here…', output: 'Formatted lines', lines: 'lines', numbered: 'Number the lines (Scene 01:)',
     short: 'Short', medium: 'Medium', long: 'Long', paste: 'Paste', copy: 'Copy', copied: 'Copied', insert: 'Use in Batch Scripts', nothing: 'Nothing to copy yet', clear: 'Clear',
     transTitle: 'Translate', khmer: 'Khmer', english: 'English', swap: 'Swap', go: 'Translate', working: 'Translating…', typeHere: 'Type or paste text', result: 'Translation',
@@ -20,7 +21,7 @@ const copy = {
   kh: {
     check: 'ពិនិត្យ', pasteHere: 'បិទភ្ជាប់អត្ថបទ', arranged: 'អត្ថបទរៀបជាជួរ', rearrange: 'រៀបចំម្តងទៀត', edited: 'អ្នកបានកែដោយដៃ។ ចុច "រៀបចំម្តងទៀត" ដើម្បីបង្កើតឡើងវិញពីអត្ថបទដែលបានបិទភ្ជាប់។', alignLeft: 'ឆ្វេង', alignCenter: 'កណ្តាល', alignRight: 'ស្តាំ', useAsInput: 'ប្រើជាអត្ថបទដើម',
     playAll: 'ចាក់ទាំងអស់', stopAll: 'ឈប់', addScene: 'បន្ថែម scene', prepare: 'Script Preparation', sendTo: 'ផ្ញើទៅ', sentTo: 'បានផ្ញើទៅ', khEngine: 'KH Voice Engine', enEngine: 'EN Voice Engine', videoEngine: 'Video Engine', breakBtn: 'កាត់ជាបន្ទាត់', undo: 'ត្រឡប់វិញ', copyScript: 'Copy Script', useResult: 'ប្រើជា script', lineCount: 'បន្ទាត់',
-    format: 'រៀបចំ', translate: 'បកប្រែ', preview: 'ស្តាប់សាកល្បង',
+    format: 'រៀបចំ', translate: 'បកប្រែ', preview: 'ស្តាប់សាកល្បង', aiAssist: 'AI ជួយ', formatBreath: 'រៀបដង្ហើម / Clauses', breath: 'ដង្ហើម', bShort: 'ខ្លី', bNatural: 'ធម្មតា', bStory: 'រឿង', scenesWord: 'Scenes', allText: 'Script ទាំងមូល (គ្រប់ Scene)', imageEngine: 'Image Engine', timelineEditor: 'Timeline Editor', moveUp: 'ឡើងលើ', moveDown: 'ចុះក្រោម', aiDone: 'Atom AI ជួយរៀបចំ Scene រួចរាល់', nothingToFormat: 'សូមបិទភ្ជាប់ ឬសរសេរ script សិន',
     formatTitle: 'រៀបចំ Script', rawPh: 'បិទភ្ជាប់ script ដើមនៅទីនេះ…', output: 'បន្ទាត់ដែលបានរៀបចំ', lines: 'បន្ទាត់', numbered: 'ដាក់លេខបន្ទាត់ (Scene 01:)',
     short: 'ខ្លី', medium: 'មធ្យម', long: 'វែង', paste: 'បិទភ្ជាប់', copy: 'Copy', copied: 'បាន Copy', insert: 'ប្រើក្នុង Batch Scripts', nothing: 'មិនទាន់មានអ្វីត្រូវ Copy', clear: 'សម្អាត',
     transTitle: 'បកប្រែ', khmer: 'ខ្មែរ', english: 'អង់គ្លេស', swap: 'ប្តូរ', go: 'បកប្រែ', working: 'កំពុងបកប្រែ…', typeHere: 'វាយ ឬបិទភ្ជាប់អត្ថបទ', result: 'លទ្ធផលបកប្រែ',
@@ -101,21 +102,19 @@ function useScenePlayer(getLines: () => string[], rate: number) {
 
 type Tab = 'check' | 'translate';
 type Align = 'left' | 'center' | 'right';
-const NEXT_ALIGN: Record<Align, Align> = { center: 'left', left: 'right', right: 'center' };
+export type Target = 'kh' | 'en' | 'image' | 'timeline';
+const STORE = 'ips-script-scenes';
 
-type Target = 'kh' | 'en' | 'video';
-
-/** The standalone Script Preparation workspace (a normal screen, not a modal). */
+/** The standalone Script Preparation workspace. `scenes` is the single source of truth: the full-script box and every Scene card edit it. */
 function Workspace({ c, anchor, onSend, onNotice }: {
-  c: C; anchor: number[]; onSend: (target: Target, text: string) => void; onNotice: (m: string) => void;
+  c: C; anchor: number[]; onSend: (target: Target, scenes: string[]) => void; onNotice: (m: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>('check');
-  const [text, setText] = useState('');            // what the user pastes
-  const [arranged, setArranged] = useState('');    // short lines, one per scene; editable by hand
-  const [dirty, setDirty] = useState(false);       // arranged was edited by hand: do not overwrite it automatically
-  const [preset, setPreset] = useState<Preset>('medium');
-  const [numbered, setNumbered] = useState(false);
-  const [align, setAlign] = useState<Align>('center');
+  const [scenes, setScenes] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [breath, setBreath] = useState<Breath>('natural');
+  const [align, setAlign] = useState<Align>('left');
+  const [tText, setTText] = useState('');
   const [from, setFrom] = useState<Lang>('km');
   const [out, setOut] = useState('');
   const [busy, setBusy] = useState(false);
@@ -123,31 +122,40 @@ function Workspace({ c, anchor, onSend, onNotice }: {
   const [rate, setRate] = useState(1);
   const to: Lang = from === 'km' ? 'en' : 'km';
   const linesRef = useRef<string[]>([]);
+  linesRef.current = scenes;
   const getLines = useCallback(() => linesRef.current, []);
   const player = useScenePlayer(getLines, rate);
-  const rows = arranged.split(/\r?\n/);
-  const sceneRows = rows.map((text, i) => ({ text, i })).filter((r) => r.text.trim() || rows.length === 1);
-  linesRef.current = rows;
-  const setRow = (i: number, v: string) => { const next = rows.slice(); next[i] = v.replace(/\r?\n/g, ' '); setArranged(next.join('\n')); setDirty(true); };
-  const delRow = (i: number) => { player.stop(); setArranged(rows.filter((_, k) => k !== i).join('\n')); setDirty(true); };
-  const addRow = () => { setArranged((arranged.trimEnd() ? arranged.trimEnd() + '\n' : '') + ' '); setDirty(true); };
+
+  useEffect(() => { try { const d = JSON.parse(localStorage.getItem(STORE) ?? 'null'); if (Array.isArray(d)) setScenes(d.map(String)); } catch { /* ignore */ } setLoaded(true); }, []);
+  useEffect(() => { if (loaded) try { localStorage.setItem(STORE, JSON.stringify(scenes)); } catch { /* ignore */ } }, [loaded, scenes]);
+
+  const filled = scenes.filter((s) => s.trim());
+  const count = filled.length;
   const name = (l: Lang) => (l === 'km' ? c.khmer : c.english);
-  const lineCount = arranged.split(/\r?\n/).filter((l) => l.trim()).length;
-  const AlignIcon = align === 'left' ? AlignLeft : align === 'right' ? AlignRight : AlignCenter;
 
-  // live: rebuild the arranged lines whenever the pasted text or the settings change (unless edited by hand)
-  useEffect(() => { if (!dirty) setArranged(breakScript(text, preset, numbered).join('\n')); }, [text, preset, numbered, dirty]);
+  // full-script box: a paste re-detects the scenes, normal typing just follows the lines (nothing else is reset)
+  const onMain = (v: string) => {
+    const grew = v.length - scenes.join('\n').length;
+    setScenes(grew > 40 || !scenes.length ? detectScenes(v) : v.split('\n'));
+  };
+  const compact = () => setScenes((s) => s.map((x) => x.trim()).filter(Boolean));
+  const setRow = (i: number, v: string) => setScenes((s) => s.map((x, k) => (k === i ? v.replace(/\r?\n/g, ' ') : x)));
+  const delRow = (i: number) => { player.stop(); setScenes((s) => s.filter((_, k) => k !== i)); };
+  const addRow = () => setScenes((s) => [...s, '']);
+  const move = (i: number, d: -1 | 1) => { player.stop(); setScenes((s) => { const j = i + d; if (j < 0 || j >= s.length) return s; const n = s.slice(); [n[i], n[j]] = [n[j], n[i]]; return n; }); };
+  const paste = async () => { try { setScenes(detectScenes(await navigator.clipboard.readText())); } catch { onNotice('Paste blocked: long-press the box and choose Paste.'); } };
 
-  const change = (v: string) => { setText(v); if (v.trim().length > 3) { const d = detectLang(v); if (d !== from) setFrom(d); } };
-  const paste = async () => { try { change(await navigator.clipboard.readText()); } catch { onNotice('Paste blocked: long-press the box and choose Paste.'); } };
-  const rearrange = () => { setDirty(false); setArranged(breakScript(text, preset, numbered).join('\n')); };
-  const result = arranged.trim() ? arranged : text;
-  const doCopy = async () => { if (!result.trim()) { onNotice(c.nothing); return; } onNotice((await copyText(result)) ? c.copied : 'Copy failed'); };
+  const formatNow = (mode: Breath) => { if (!count) { onNotice(c.nothingToFormat); return false; } setScenes(formatBreath(scenes.map(tidy), mode)); return true; };
+  /** One tap: clean spacing, detect scenes, and set the breath rhythm locally (instant, no network). */
+  const aiAssist = () => { if (formatNow(breath)) onNotice(c.aiDone); };
+
+  const text = scenes.join('\n');
+  const doCopy = async () => { if (!count) { onNotice(c.nothing); return; } onNotice((await copyText(filled.join('\n'))) ? c.copied : 'Copy failed'); };
   const go = async () => {
-    if (!text.trim()) return;
+    if (!tText.trim()) return;
     setBusy(true); setError('');
     try {
-      const r = await api.translate(text, from, to);
+      const r = await api.translate(tText, from, to);
       if (r.ok && r.text !== undefined) setOut(r.text); else setError(r.error === 'quota' ? c.quota : `${c.failed}${r.error ? `: ${r.error}` : ''}`);
     } catch (e) { setError(e instanceof Error ? e.message : c.failed); }
     setBusy(false);
@@ -157,8 +165,9 @@ function Workspace({ c, anchor, onSend, onNotice }: {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(t); u.lang = lang === 'km' ? 'km-KH' : 'en-US'; window.speechSynthesis.speak(u);
   };
-
-  const send = (t: Target) => { if (result.trim()) { onSend(t, result); onNotice(`${c.sentTo} ${t === 'kh' ? c.khEngine : t === 'en' ? c.enEngine : c.videoEngine}`); } else onNotice(c.nothing); };
+  const label = (t: Target) => (t === 'kh' ? c.khEngine : t === 'en' ? c.enEngine : t === 'image' ? c.imageEngine : c.timelineEditor);
+  const send = (t: Target) => { if (!count) { onNotice(c.nothing); return; } player.stop(); onSend(t, filled.map(tidy)); onNotice(`${c.sentTo} ${label(t)} · ${count} ${c.scenesWord}`); };
+  const ALIGNS: [Align, typeof AlignLeft, string][] = [['left', AlignLeft, c.alignLeft], ['center', AlignCenter, c.alignCenter], ['right', AlignRight, c.alignRight]];
 
   return <section className="screen-card script-screen">
     <div className="screen-heading"><div className="section-heading"><div className="heading-icon"><Scissors size={18} /></div><div className="heading-only"><span className="eyebrow">{c.prepare}</span></div></div></div>
@@ -168,36 +177,41 @@ function Workspace({ c, anchor, onSend, onNotice }: {
     </div>
 
     {tab === 'check' && <div className="tool-section">
+      <div className="sp-toolbar">
+        <button type="button" className="ai-assist" onClick={aiAssist}><LogoMark size={20} /> {c.aiAssist}</button>
+        <div className="seg" role="group" aria-label={c.breath}>{(['short', 'natural', 'story'] as Breath[]).map((b) => <button key={b} type="button" aria-pressed={breath === b} className={breath === b ? 'on' : ''} onClick={() => setBreath(b)}>{b === 'short' ? c.bShort : b === 'natural' ? c.bNatural : c.bStory}</button>)}</div>
+        <button type="button" className="text-button" onClick={() => formatNow(breath)}><Scissors size={13} /> {c.formatBreath}</button>
+        <div className="seg" role="group" aria-label="Alignment">{ALIGNS.map(([a, I, l]) => <button key={a} type="button" aria-label={l} aria-pressed={align === a} className={align === a ? 'on' : ''} onClick={() => setAlign(a)}><I size={15} /></button>)}</div>
+      </div>
       <div className="check-grid">
         <div className="check-pane">
-          <div className="tool-row"><span className="tool-label">{c.pasteHere}</span><span className="tool-actions">
+          <div className="tool-row"><span className="tool-label">{c.allText}</span><span className="tool-actions">
             <button type="button" className="text-button" onClick={paste}><ClipboardPaste size={14} /> {c.paste}</button>
-            {text && <button type="button" className="text-button" onClick={() => { setText(''); setDirty(false); }}>{c.clear}</button>}</span></div>
-          <textarea className="studio-input tool-area" value={text} placeholder={c.rawPh} onChange={(e) => change(e.target.value)} />
+            {scenes.length > 0 && <button type="button" className="text-button" onClick={() => { player.stop(); setScenes([]); }}>{c.clear}</button>}</span></div>
+          <textarea className="studio-input tool-area" value={text} style={{ textAlign: align }} placeholder={c.rawPh} onChange={(e) => onMain(e.target.value)} onBlur={compact} />
         </div>
         <div className="check-pane">
-          <div className="tool-row"><span className="tool-label">{c.arranged} · {lineCount} {c.lineCount}</span><span className="tool-actions">
-            <button type="button" className="icon-button sm" onClick={() => setAlign(NEXT_ALIGN[align])} aria-label={`${c.alignCenter}/${c.alignLeft}/${c.alignRight}`} title={align === 'left' ? c.alignLeft : align === 'right' ? c.alignRight : c.alignCenter}><AlignIcon size={15} /></button>
-            <button type="button" className={`text-button ${dirty ? 'attn' : ''}`} onClick={rearrange}><RefreshCw size={13} /> {c.rearrange}</button></span></div>
+          <div className="tool-row"><span className="tool-label scene-count">{c.arranged} • {count} {c.scenesWord}</span></div>
           <div className="play-bar">
             {player.mode === 'idle'
-              ? <button type="button" className="primary-button" onClick={player.playAll} disabled={!player.supported || !arranged.trim()}><Play size={14} fill="currentColor" /> {c.playAll}</button>
+              ? <button type="button" className="primary-button" onClick={player.playAll} disabled={!player.supported || !count}><Play size={14} fill="currentColor" /> {c.playAll}</button>
               : <button type="button" className="primary-button" onClick={player.stop}><Square size={14} fill="currentColor" /> {c.stopAll}</button>}
             <label className="speed">{c.speed} {rate.toFixed(1)}×<input type="range" min="0.6" max="1.5" step="0.1" value={rate} onChange={(e) => setRate(Number(e.target.value))} /></label>
           </div>
           {!player.supported && <div className="access-status bad">{c.unsupported}</div>}
-          {player.supported && !player.hasKm && rows.some((r) => detectLang(r) === 'km') && <div className="access-status bad">{c.noKm}</div>}
+          {player.supported && !player.hasKm && scenes.some((r) => detectLang(r) === 'km') && <div className="access-status bad">{c.noKm}</div>}
           <ol className="scene-list">
-            {sceneRows.map(({ text: t, i }, n) => {
-              const a = anchor[n]; const tm = player.times[i];
+            {scenes.map((t, i) => {
+              const a = anchor[i]; const tm = player.times[i];
               return <li key={i} className={`scene-row ${player.now === i ? 'now' : ''}`}>
-                <div className="scene-head"><b>Scene {String(n + 1).padStart(2, '0')}</b>
+                <div className="scene-head"><b>Scene {String(i + 1).padStart(2, '0')}</b>
                   <em className={a && tm && tm > a * 1.1 ? 'over' : ''}>{tm !== undefined ? `${tm}${c.spoke}` : ''}{a ? ` · ${c.anchor} ${a}${c.spoke}` : ''}</em>
                   <span className="scene-btns">
-                    {player.mode === 'one' && player.now === i
-                      ? <button type="button" className="icon-button sm" onClick={player.stop} aria-label={`${c.stop} scene ${n + 1}`}><Square size={13} fill="currentColor" /></button>
-                      : <button type="button" className="icon-button sm" onClick={() => player.playOne(i)} disabled={!player.supported || !t.trim()} aria-label={`${c.play} scene ${n + 1}`}><Play size={13} fill="currentColor" /></button>}
-                    {player.mode !== 'idle' && player.now === i && player.mode === 'all' && <button type="button" className="icon-button sm" onClick={player.stop} aria-label={c.stop}><Square size={13} fill="currentColor" /></button>}
+                    {player.mode !== 'idle' && player.now === i
+                      ? <button type="button" className="icon-button sm" onClick={player.stop} aria-label={`${c.stop} scene ${i + 1}`}><Square size={13} fill="currentColor" /></button>
+                      : <button type="button" className="icon-button sm" onClick={() => player.playOne(i)} disabled={!player.supported || !t.trim()} aria-label={`${c.play} scene ${i + 1}`}><Play size={13} fill="currentColor" /></button>}
+                    <button type="button" className="icon-button sm" onClick={() => move(i, -1)} disabled={i === 0} aria-label={c.moveUp}><ArrowUp size={13} /></button>
+                    <button type="button" className="icon-button sm" onClick={() => move(i, 1)} disabled={i === scenes.length - 1} aria-label={c.moveDown}><ArrowDown size={13} /></button>
                     <button type="button" className="icon-button sm" onClick={() => delRow(i)} aria-label="Delete scene"><X size={13} /></button>
                   </span></div>
                 <textarea className="scene-text" rows={Math.max(1, Math.ceil(t.length / 28))} style={{ textAlign: align }} value={t} placeholder={c.output} onChange={(e) => setRow(i, e.target.value)} />
@@ -205,33 +219,30 @@ function Workspace({ c, anchor, onSend, onNotice }: {
             })}
           </ol>
           <button type="button" className="text-button" onClick={addRow}>+ {c.addScene}</button>
-          {dirty && <p className="access-help">{c.edited}</p>}
         </div>
       </div>
-      <div className="tool-row"><div className="chip-row">{(['short', 'medium', 'long'] as Preset[]).map((p) => <button key={p} type="button" className={`chip ${preset === p ? 'on' : ''}`} onClick={() => { setPreset(p); setDirty(false); }}>{c[p]} · {PRESET_MAX[p]}</button>)}</div>
-        <label className="check-label"><input type="checkbox" checked={numbered} onChange={(e) => { setNumbered(e.target.checked); setDirty(false); }} /> {c.numbered}</label></div>
     </div>}
 
     {tab === 'translate' && <div className="tool-section">
-      <div className="lang-bar"><span className="lang-pill">{name(from)}</span><button type="button" className="icon-button" onClick={() => { setFrom(to); if (out) { setText(out); setOut(''); setDirty(false); } }} aria-label={c.swap}><ArrowLeftRight size={16} /></button><span className="lang-pill">{name(to)}</span></div>
-      <textarea className="studio-input tool-area" value={text} placeholder={c.typeHere} onChange={(e) => change(e.target.value)} />
+      <div className="lang-bar"><span className="lang-pill">{name(from)}</span><button type="button" className="icon-button" onClick={() => { setFrom(to); if (out) { setTText(out); setOut(''); } }} aria-label={c.swap}><ArrowLeftRight size={16} /></button><span className="lang-pill">{name(to)}</span></div>
+      <textarea className="studio-input tool-area" value={tText} placeholder={c.typeHere} onChange={(e) => { setTText(e.target.value); if (e.target.value.trim().length > 3) { const d = detectLang(e.target.value); if (d !== from) setFrom(d); } }} />
       <textarea className="studio-input tool-area out" readOnly value={busy ? c.working : out} placeholder={c.result} />
       <div className="pane-foot"><button type="button" className="icon-button sm" onClick={() => speak(out, to)} aria-label={c.speak}><Volume2 size={14} /></button>
         <button type="button" className="icon-button sm" onClick={async () => onNotice(out ? ((await copyText(out)) ? c.copied : 'Copy failed') : c.nothing)} aria-label={c.copy}><Copy size={14} /></button>
-        <button type="button" className="text-button" onClick={() => { if (out) { setText(out); setOut(''); setDirty(false); setTab('check'); } else onNotice(c.nothing); }}>{c.useAsInput}</button></div>
+        <button type="button" className="text-button" onClick={() => { if (out) { setScenes(detectScenes(out)); setOut(''); setTab('check'); } else onNotice(c.nothing); }}>{c.useResult}</button></div>
       {error && <div className="access-status bad">{error}</div>}
-      <button type="button" className="primary-button" onClick={go} disabled={busy || !text.trim()}><Languages size={15} /> {busy ? c.working : c.go}</button>
+      <button type="button" className="primary-button" onClick={go} disabled={busy || !tText.trim()}><Languages size={15} /> {busy ? c.working : c.go}</button>
       <p className="access-help">{c.proof}</p>
     </div>}
 
     <div className="tool-foot">
       <button type="button" className="primary-button big-copy" onClick={doCopy}><Copy size={16} /> {c.copyScript}</button>
       <div className="send-row"><span className="tool-label">{c.sendTo}</span>
-        {(['kh', 'video', 'en'] as Target[]).map((t) => <button key={t} type="button" className="text-button send-chip" onClick={() => send(t)}><ListChecks size={13} /> {t === 'kh' ? c.khEngine : t === 'en' ? c.enEngine : c.videoEngine}</button>)}</div>
+        {(['kh', 'en', 'image', 'timeline'] as Target[]).map((t) => <button key={t} type="button" className="text-button send-chip" onClick={() => send(t)}><ListChecks size={13} /> {label(t)}</button>)}</div>
     </div>
   </section>;
 }
 
-export function ScriptPrepScreen({ language, anchor, onSend, onNotice }: { language: Language; anchor: number[]; onSend: (target: Target, text: string) => void; onNotice: (m: string) => void }) {
+export function ScriptPrepScreen({ language, anchor, onSend, onNotice }: { language: Language; anchor: number[]; onSend: (target: Target, scenes: string[]) => void; onNotice: (m: string) => void }) {
   return <Workspace c={copy[language]} anchor={anchor} onSend={onSend} onNotice={onNotice} />;
 }

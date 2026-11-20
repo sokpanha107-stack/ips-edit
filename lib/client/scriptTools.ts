@@ -1,3 +1,5 @@
+import { splitScenes } from '@/lib/client/api';
+
 /** Pure text helpers for the script tools (no React): language detection and the sentence breaker. */
 export type Lang = 'km' | 'en';
 export type Preset = 'short' | 'medium' | 'long';
@@ -75,7 +77,7 @@ function pack(words: string[], max: number, min: number, lang: Lang): string[] {
   return lines;
 }
 
-function breakSentence(s: string, max: number, lang: Lang): string[] {
+export function breakSentence(s: string, max: number, lang: Lang): string[] {
   const min = Math.max(6, Math.round(max * 0.4));
   if (len(s) <= max) return [s];
   // strong boundaries: commas, semicolons, colons, dashes. Tiny pieces are glued to the next one.
@@ -104,3 +106,33 @@ export function breakScript(raw: string, preset: Preset = 'medium', numbered = f
   }
   return numbered ? out.map((l, i) => `Scene ${String(i + 1).padStart(2, '0')}: ${l}`) : out;
 }
+
+/** Breath modes: how long one spoken clause may be. Only whitespace changes; every word is kept. */
+export type Breath = 'short' | 'natural' | 'story';
+export const BREATH_MAX: Record<Breath, number> = { short: 26, natural: 40, story: 60 };
+
+/** Pasted text -> scenes with no length limit and no count cap. Explicit "Scene N" / "N." markers or one line per scene win;
+ *  a single unbroken block is cut at sentence ends only. */
+export function detectScenes(raw: string): string[] {
+  const t = raw.replace(/\r/g, '').trim();
+  if (!t) return [];
+  const lines = t.split('\n').map((l) => l.trim()).filter(Boolean);
+  const marked = /^(scene|ឈុត|ឆាក)\s*\d+|^\d+\s*[.):-]/i.test(lines[0]);
+  if (lines.length > 1 || marked) return splitScenes(t).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  return sentences(lines[0].replace(/\s+/g, ' '));
+}
+
+/** Local, instant breath formatter: sentences -> clauses of the chosen breath length. Scene order is kept. */
+export function formatBreath(scenes: string[], mode: Breath): string[] {
+  const max = BREATH_MAX[mode];
+  const out: string[] = [];
+  for (const sc of scenes) {
+    const text = sc.replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    for (const s of sentences(text)) out.push(...breakSentence(s, max, detectLang(s)));
+  }
+  return out;
+}
+
+/** Tidy spacing around punctuation without touching any word. */
+export const tidy = (s: string) => s.replace(/\s+/g, ' ').replace(/\s+([,.;:!?។៕])/g, '$1').trim();
