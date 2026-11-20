@@ -1,2 +1,4 @@
-# GPU workers (Python/FastAPI) run on RunPod, never on Vercel: keeps Vercel from auto-detecting worker/music/music_api.py as a FastAPI project
+# GPU workers (Python/FastAPI) run on RunPod, never on Vercel.
+# The pinned "framework": "nextjs" in vercel.json stops Vercel from auto-detecting them as a FastAPI project.
 worker
+worker/**
