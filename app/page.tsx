@@ -14,6 +14,8 @@ import { DEFAULT_FEATURES, isOn, loadFeatures, saveFeatures, FEATURE_LABEL, type
 import { TimelineEditor, type TimelineHandle } from '@/components/timeline-editor';
 import { ImageEngine } from '@/components/image-engine';
 import { PromptLibrary } from '@/components/prompt-library';
+import { MusicLibrary } from '@/components/music-library';
+import { LibraryTabs, type LibraryTab } from '@/components/library-tabs';
 import { CommandCenter } from '@/components/command-center';
 import { useHeartbeat } from '@/lib/client/heartbeat';
 import { addVoice, blobToDataUrl, deleteVoices as dbDeleteVoices, fmtLen, getVoiceBlob, listVoices, type VoiceMeta } from '@/lib/client/voiceStore';
@@ -22,12 +24,12 @@ import { AccountPanel } from '@/components/account-panel';
 import { ApiKeyVault } from '@/components/api-key-vault';
 import { DocumentManager } from '@/components/document-manager';
 import {
-  AudioLines, Check, ChevronDown, Cloud, Library, Square, Clapperboard, Image as ImageIcon, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Moon,
+  AudioLines, Check, ChevronDown, Cloud, Library, Square, Clapperboard, Image as ImageIcon, ChevronRight, Eye, EyeOff, Film, Gauge, History, LampDesk, Lock, Menu, Mic2, Music2, Moon,
   Folder, NotebookPen, Palette, Play, Radio, Send, Settings2, ShieldCheck, Sun, Trash2, Upload, WandSparkles, X, type LucideIcon, BookOpen, CheckSquare, Plus,
 } from 'lucide-react';
 
-type Tab = 'script' | 'prompts' | 'documents' | 'voices' | 'kh' | 'video' | 'image' | 'en' | 'timeline' | 'history';
-const TAB_FEATURE: Partial<Record<Tab, FeatureId>> = { script: 'script', prompts: 'prompts', documents: 'documents', voices: 'voices', kh: 'voice', en: 'voice', video: 'video', image: 'image', history: 'history' };
+type Tab = 'script' | 'prompts' | 'documents' | 'voices' | 'music' | 'kh' | 'video' | 'image' | 'en' | 'timeline' | 'history';
+const TAB_FEATURE: Partial<Record<Tab, FeatureId>> = { script: 'script', prompts: 'prompts', documents: 'documents', voices: 'voices', music: 'music', kh: 'voice', en: 'voice', video: 'video', image: 'image', history: 'history' };
 type ThemeMode = 'system' | 'light' | 'dark';
 type Language = 'en' | 'kh';
 
@@ -324,7 +326,7 @@ export default function Home() {
   const sendVoice = (voice: string, target: Target) => { setAssigned((current) => ({ ...current, [target]: voice })); showNotice(`${t.sentTo} ${target === 'kh' ? t.khEngine : t.enEngine} · ${voice}`); };
   const deleteVoices = (names: string[]) => { void dbDeleteVoices(voices.filter((v) => names.includes(v.name)).map((v) => v.id)); setVoices((current) => current.filter((voice) => !names.includes(voice.name))); setAssigned((current) => ({ kh: names.includes(current.kh) ? '' : current.kh, en: names.includes(current.en) ? '' : current.en })); showNotice(t.deletedVoices); };
   const addVoiceFile = async (file: File, kind: string) => { try { await addVoice(file, kind); setVoices((await listVoices()).map(toVoice)); showNotice(t.voiceAdded); } catch (e) { showNotice(e instanceof Error ? e.message : 'Could not add the voice'); } };
-  const renderScreen = () => { if (activeTab === 'script' || activeTab === 'prompts' || activeTab === 'documents' || activeTab === 'timeline' || activeTab === 'image') return null; if (activeTab === 'voices') return <VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onAdd={addVoiceFile} onNotice={showNotice} />; if (activeTab === 'video') return <EngineWorkspace key="video" blocked={runpodReady ? undefined : (vault ? 'Add your RunPod key + Endpoint ID in Settings → API Key Vault to use the Video Engine.' : 'Loading…')} type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} cfg={videoCfg} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
+  const renderScreen = () => { if (activeTab === 'script' || activeTab === 'prompts' || activeTab === 'music' || activeTab === 'documents' || activeTab === 'timeline' || activeTab === 'image') return null; if (activeTab === 'voices') return <><LibTabs /><VoiceLibrary t={t} voices={voices} assigned={assigned} onSend={sendVoice} onDelete={deleteVoices} onAdd={addVoiceFile} onNotice={showNotice} /></>; if (activeTab === 'video') return <EngineWorkspace key="video" blocked={runpodReady ? undefined : (vault ? 'Add your RunPod key + Endpoint ID in Settings → API Key Vault to use the Video Engine.' : 'Loading…')} type="video" t={t} language={language} draft={drafts.video} onDraft={(patch) => updateDraft('video', patch)} cfg={videoCfg} onNotice={showNotice} />; if (activeTab === 'kh') return <EngineWorkspace key="kh" type="kh" t={t} language={language} onAnchor={(items) => updateDraft('video', { audio: items, count: String(items.length) })} draft={drafts.kh} onDraft={(patch) => updateDraft('kh', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.kh)} onNotice={showNotice} />; if (activeTab === 'en') return <EngineWorkspace key="en" type="en" t={t} language={language} anchor={drafts.video.audio} draft={drafts.en} onDraft={(patch) => updateDraft('en', patch)} voiceProfile={voices.find((voice) => voice.name === assigned.en)} onNotice={showNotice} />; return <HistoryProject t={t} />; };
   const items = navItems(t);
 
   const sendScript = (target: 'kh' | 'en' | 'video', text: string) => updateDraft(target, { script: text, count: String(splitScenes(text).length || drafts[target].count) });
@@ -335,15 +337,27 @@ export default function Home() {
   useEffect(() => { const need = TAB_FEATURE[activeTab]; if (need && !isOn(features, need)) setActiveTab(firstTab()); }, [features, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'kh' || activeTab === 'en') lastVoiceRef.current = activeTab; }, [activeTab]);
   useEffect(() => { if (!isOn(features, 'command')) setCommandOpen(false); }, [features]);
-  const tabIcon: Record<string, LucideIcon> = { script: NotebookPen, prompts: Library, documents: Cloud, voices: Mic2, video: Film, image: ImageIcon, history: History };
-  const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: t.voiceLibrary, video: t.videoEngine, kh: t.khEngine, en: t.enEngine, timeline: 'Timeline Editor', image: 'Image Engine', history: t.history };
+  const tabIcon: Record<string, LucideIcon> = { script: NotebookPen, prompts: Library, documents: Cloud, voices: Mic2, music: Music2, video: Film, image: ImageIcon, history: History };
+  const tabLabel: Record<string, string> = { script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: t.voiceLibrary, music: 'Music Library', video: t.videoEngine, kh: t.khEngine, en: t.enEngine, timeline: 'Timeline Editor', image: 'Image Engine', history: t.history };
   const tabIdx = menuOpen ? 0 : -1;
+  const LIB: LibraryTab[] = ['prompts', 'voices', 'music'];
+  const libEnabled = { prompts: on('prompts'), voices: on('voices'), music: on('music') };
+  const inLib = LIB.includes(activeTab as LibraryTab);
+  const [libOpen, setLibOpen] = useState(false);
+  const LibTabs = () => <LibraryTabs active={activeTab as LibraryTab} enabled={libEnabled} onGo={(x) => setActiveTab(x)} />;
 
   return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button>{(activeTab === 'kh' || activeTab === 'en') && <div className="voice-switch" role="tablist" aria-label="Voice language"><button type="button" role="tab" aria-selected={activeTab === 'kh'} className={activeTab === 'kh' ? 'active' : ''} onClick={() => setActiveTab('kh')}>KH</button><button type="button" role="tab" aria-selected={activeTab === 'en'} className={activeTab === 'en' ? 'active' : ''} onClick={() => setActiveTab('en')}>EN</button></div>}<h1 className="top-title">{activeTab === 'kh' || activeTab === 'en' ? 'Voice Engine' : (tabLabel[activeTab] ?? '')}</h1>{!settingsOpen && !commandOpen && <AiAssistant screen={tabLabel[activeTab] ?? activeTab} language={language} />}</header><BatchBanner />
     <div className={`side-overlay ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
     <aside className={`side-drawer ${menuOpen ? 'open' : ''}`} aria-label="Navigation" aria-hidden={!menuOpen}>
       <div className="side-head"><Brand t={t} /><button type="button" className="icon-button" onClick={() => setMenuOpen(false)} aria-label={t.close ?? 'Close'}><X size={20} /></button></div>
-      <nav className="side-nav">{features.filter((f) => f.on).map((f) => {
+      <nav className="side-nav">{features.filter((f) => f.on).map((f, i, arr) => {
+        if (LIB.includes(f.id as LibraryTab)) {
+          if (arr.findIndex((x) => LIB.includes(x.id as LibraryTab)) !== i) return null;   // one grouped item at the first library slot
+          const kids = LIB.filter((id) => on(id));
+          const open = libOpen || inLib;
+          return <div key="library"><button type="button" tabIndex={tabIdx} className={`side-item ${open ? 'open' : ''} ${inLib ? 'parent-active' : ''}`} aria-expanded={open} onClick={() => { if (!inLib) go(kids[0] as Tab); setLibOpen(!(libOpen || inLib) ? true : !libOpen); }}><Library size={20} /><span>Library</span><ChevronDown size={18} className="chev" /></button>
+            <div className={`side-sub ${open ? 'open' : ''}`}><div>{kids.map((id) => <button type="button" key={id} tabIndex={open ? tabIdx : -1} className={activeTab === id ? 'side-item child active' : 'side-item child'} onClick={() => go(id as Tab)}>{tabLabel[id]}</button>)}</div></div></div>;
+        }
         if (f.id === 'voice') {
           const inVoice = activeTab === 'kh' || activeTab === 'en';
           return <button type="button" key="voice" tabIndex={tabIdx} className={inVoice ? 'side-item active' : 'side-item'} onClick={() => go(inVoice ? (activeTab as Tab) : lastVoiceRef.current)}><AudioLines size={20} /><span>Voice Engine</span></button>;
@@ -360,7 +374,8 @@ export default function Home() {
     <div className="workspace">{notice && <div className="notice"><Check size={16} />{notice}</div>}
       <div hidden={activeTab !== 'script'}><ScriptPrepScreen language={language} anchor={drafts.video.audio.map((a) => a.seconds)} onSend={sendScript} onNotice={showNotice} /></div>
       <div hidden={activeTab !== 'timeline'}><TimelineEditor ref={timelineRef} scripts={[{ label: 'KH', text: drafts.kh.script }, { label: 'EN', text: drafts.en.script }]} onNotice={showNotice} /></div>
-      <div hidden={activeTab !== 'prompts'}>{on('prompts') && <PromptLibrary active={activeTab === 'prompts'} onNotice={showNotice} />}</div>
+      <div hidden={activeTab !== 'prompts'}>{on('prompts') && <><LibTabs /><PromptLibrary active={activeTab === 'prompts'} onNotice={showNotice} /></>}</div>
+      <div hidden={activeTab !== 'music'}>{on('music') && <><LibTabs /><MusicLibrary onNotice={showNotice} onUse={async (f) => { await timelineRef.current?.addMusic([f]); setActiveTab('timeline'); }} /></>}</div>
       <div hidden={activeTab !== 'documents'}>{on('documents') && <DocumentManager active={activeTab === 'documents'} onNotice={showNotice} onSendToTimeline={async (files) => { await timelineRef.current?.addMixed(files); setActiveTab('timeline'); }} />}</div>
       <div hidden={activeTab !== 'image'}>{on('image') && <ImageEngine language={language} onImages={(files) => timelineRef.current?.addImages(files)} onNotice={showNotice} />}</div>
       {renderScreen()}</div>

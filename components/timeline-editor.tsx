@@ -57,7 +57,7 @@ function previewWords(text: string, start: number, end: number, t: number) {
   return spans.map((s) => ({ ...s, state: t >= s.b ? 'past' : t >= s.a ? 'now' : 'next' }));
 }
 
-export interface TimelineHandle { addImages: (files: File[]) => Promise<void>; addMixed: (files: File[]) => Promise<void> }
+export interface TimelineHandle { addImages: (files: File[]) => Promise<void>; addMixed: (files: File[]) => Promise<void>; addMusic: (files: File[]) => Promise<void> }
 
 export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: string; text: string }[]; onNotice: (m: string) => void }>(function TimelineEditor({ scripts, onNotice }, ref) {
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -124,6 +124,8 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   useImperativeHandle(ref, () => ({
     addImages: (files: File[]) => addFilesRef.current('visual', files),
     /** From Document: audio goes to Voiceover, pictures and clips go to Visuals. Input order (natural name order) is kept. */
+    /** From Music Library: becomes the background track. */
+    addMusic: async (files: File[]) => { await addFilesRef.current('music', files); },
     addMixed: async (files: File[]) => {
       const audio = files.filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg)$/i.test(f.name));
       const rest = files.filter((f) => !audio.includes(f));

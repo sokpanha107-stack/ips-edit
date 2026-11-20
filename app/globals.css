@@ -439,3 +439,14 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 @media (max-width:420px){.tl-pill{padding:8px 11px}}
 
 .img-banner{margin:10px 0 6px;font-size:14px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+
+/* ---- Library hub ---- */
+.lib-tabs{display:flex;gap:6px;margin:0 0 10px;padding:4px;border-radius:999px;background:rgba(127,127,127,.12);overflow-x:auto}
+.lib-tabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:0;background:transparent;color:var(--ink-soft);padding:9px 10px;border-radius:999px;font-size:13px;white-space:nowrap;cursor:pointer}
+.lib-tabs button.active{background:var(--card);color:var(--ink);font-weight:700}.lib-tabs button.active svg{color:var(--amber)}
+.music-screen{display:flex;flex-direction:column;gap:10px}.music-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.music-empty{display:grid;place-items:center;gap:6px;text-align:center;padding:30px 10px;color:var(--ink-soft);font-size:14px}
+.music-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.music-list li{display:flex;align-items:center;gap:8px;padding:10px 2px;border-bottom:1px solid var(--line)}
+.music-play{width:42px;height:42px;border-radius:50%;border:1px solid var(--amber);background:rgba(217,119,6,.1);color:var(--amber-deep);display:grid;place-items:center;flex:0 0 auto;cursor:pointer}
+.music-meta{flex:1;min-width:0;display:flex;flex-direction:column}.music-meta strong{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.music-meta small{color:var(--ink-soft);font-size:12px}
