@@ -349,7 +349,8 @@ export default function Home() {
   const LIB: LibraryTab[] = ['prompts', 'voices', 'music'];
   const libEnabled = { prompts: on('prompts'), voices: on('voices'), music: on('music') };
   const inLib = LIB.includes(activeTab as LibraryTab);
-  const [libOpen, setLibOpen] = useState(false);
+  const lastLibRef = useRef<LibraryTab | null>(null);
+  useEffect(() => { if (inLib) lastLibRef.current = activeTab as LibraryTab; }, [inLib, activeTab]);
   const LibTabs = () => <LibraryTabs active={activeTab as LibraryTab} enabled={libEnabled} onGo={(x) => setActiveTab(x)} />;
 
   return <main className="app-shell"><header className="topbar"><button type="button" className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Menu" aria-expanded={menuOpen}><Menu size={22} /></button>{(activeTab === 'kh' || activeTab === 'en') && <div className="voice-switch" role="tablist" aria-label="Voice language"><button type="button" role="tab" aria-selected={activeTab === 'kh'} className={activeTab === 'kh' ? 'active' : ''} onClick={() => setActiveTab('kh')}>KH</button><button type="button" role="tab" aria-selected={activeTab === 'en'} className={activeTab === 'en' ? 'active' : ''} onClick={() => setActiveTab('en')}>EN</button></div>}<h1 className="top-title">{activeTab === 'kh' || activeTab === 'en' ? 'Voice Engine' : (tabLabel[activeTab] ?? '')}</h1>{!settingsOpen && !commandOpen && <AiAssistant screen={tabLabel[activeTab] ?? activeTab} language={language} />}</header><BatchBanner />
@@ -360,9 +361,8 @@ export default function Home() {
         if (LIB.includes(f.id as LibraryTab)) {
           if (arr.findIndex((x) => LIB.includes(x.id as LibraryTab)) !== i) return null;   // one grouped item at the first library slot
           const kids = LIB.filter((id) => on(id));
-          const open = libOpen || inLib;
-          return <div key="library"><button type="button" tabIndex={tabIdx} className={`side-item ${open ? 'open' : ''} ${inLib ? 'parent-active' : ''}`} aria-expanded={open} onClick={() => { if (!inLib) go(kids[0] as Tab); setLibOpen(!(libOpen || inLib) ? true : !libOpen); }}><Library size={20} /><span>Library</span><ChevronDown size={18} className="chev" /></button>
-            <div className={`side-sub ${open ? 'open' : ''}`}><div>{kids.map((id) => <button type="button" key={id} tabIndex={open ? tabIdx : -1} className={activeTab === id ? 'side-item child active' : 'side-item child'} onClick={() => go(id as Tab)}>{tabLabel[id]}</button>)}</div></div></div>;
+          const target = (inLib ? activeTab : lastLibRef.current && kids.includes(lastLibRef.current) ? lastLibRef.current : kids[0]) as Tab;
+          return <button type="button" key="library" tabIndex={tabIdx} className={inLib ? 'side-item active' : 'side-item'} onClick={() => go(target)}><Library size={20} /><span>Library</span></button>;
         }
         if (f.id === 'voice') {
           const inVoice = activeTab === 'kh' || activeTab === 'en';
