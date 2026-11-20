@@ -1,0 +1,12 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+httpx>=0.27
+numpy
+scipy
+soundfile
+pyloudnorm
+pedalboard
+demucs
+runpod            # only used by handler.py (RunPod Serverless wrapper)
+# Model code is cloned by the Dockerfile (pinned by you): ACE-Step -> /opt/ACE-Step, Seed-VC -> /opt/seed-vc, RVC -> /opt/rvc

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Eye, EyeOff, Gauge, Image as ImageIcon, Mic2, Plug, Film, X } from 'lucide-react';
+import { Check, Disc3, Eye, EyeOff, Gauge, Image as ImageIcon, Mic2, Plug, Film, X } from 'lucide-react';
 import { getPod, setPod, podCall, type PodStatus } from '@/lib/client/pod';
 import { api, getEngineEndpoint, setEngineEndpoint, type EngineKind, type ConnectResult, type HardwareInfo } from '@/lib/client/api';
 
@@ -39,7 +39,7 @@ function SecretInput({ value, onChange, placeholder, label }: { value: string; o
 }
 
 function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t: Labels; c: (typeof copy)['en'] | (typeof copy)['kh'] }) {
-  const Icon = kind === 'image' ? ImageIcon : Film;
+  const Icon = kind === 'image' ? ImageIcon : kind === 'music' ? Disc3 : Film;
   const [status, setStatus] = useState<Status>({ kind: 'idle', text: '' });
   const [hw, setHw] = useState<HardwareInfo | null>(null);
   const [url, setUrl] = useState('');
@@ -109,12 +109,12 @@ function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t:
 
   return <>
       <section className="cc-block cc-video">
-        <div className="cc-title"><Icon size={15} /><strong>{kind === 'image' ? c.image : c.video}</strong>
+        <div className="cc-title"><Icon size={15} /><strong>{kind === 'image' ? c.image : kind === 'music' ? 'Music Engine (RunPod)' : c.video}</strong>
           <span className={`cc-dot ${status.kind === 'ok' ? 'on' : status.kind === 'testing' ? 'wait' : ''}`} />
         </div>
         <input className="studio-input" type="url" inputMode="url" aria-label="API URL" placeholder={c.urlPh} value={url} autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={(e) => { setUrl(e.target.value); connectedRef.current = false; setStatus({ kind: 'idle', text: '' }); }} />
         <SecretInput value={key} onChange={(v) => { setKey(v); connectedRef.current = false; }} placeholder={c.keyPh} label="API key" />
-        <p className="access-help">{kind === 'image' ? c.imageHelp : c.videoHelp}</p>
+        <p className="access-help">{kind === 'image' ? c.imageHelp : kind === 'music' ? 'RunPod GPU worker (worker/music) that composes the song, swaps in YOUR Signature Voice and uploads the .mp3 to Document. Use the Pod proxy URL (https://<podId>-8000.proxy.runpod.net) or leave empty to use the saved Pod ID.' : c.videoHelp}</p>
         <button type="button" className="access-test" onClick={connect} disabled={status.kind === 'testing'}><Plug size={14} /> {status.kind === 'testing' ? c.connecting : c.connect}</button>
         {status.kind !== 'idle' && <div className={`access-status ${status.kind}`}>{status.text}</div>}
 
@@ -174,10 +174,10 @@ function PodPanel({ language }: { language: 'en' | 'kh' }) {
   </section>;
 }
 
-export function CommandCenter({ open, onClose, t, language, show }: { open: boolean; onClose: () => void; t: Labels; language: 'en' | 'kh'; show: { voice: boolean; video: boolean; image: boolean } }) {
+export function CommandCenter({ open, onClose, t, language, show }: { open: boolean; onClose: () => void; t: Labels; language: 'en' | 'kh'; show: { voice: boolean; video: boolean; image: boolean; music?: boolean } }) {
   const c = copy[language];
   if (!open) return null;
-  const none = !show.voice && !show.video && !show.image;
+  const none = !show.voice && !show.video && !show.image && !show.music;
   return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(e) => e.stopPropagation()}>
     <div className="drawer-header"><h2>{t.commandCenter}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div>
     <div className="drawer-content">
@@ -185,7 +185,8 @@ export function CommandCenter({ open, onClose, t, language, show }: { open: bool
       {show.voice && <section className="cc-block"><div className="cc-title"><Mic2 size={15} /><strong>{c.voice}</strong></div><p className="access-help">Voice keys live in Settings → API Key Vault (encrypted, never shown again). With no Premium Voice key, the free gTTS voice is used.</p></section>}
       {show.video && <EnginePanel kind="video" open={open} t={t} c={c} />}
       {show.image && <EnginePanel kind="image" open={open} t={t} c={c} />}
-      {(show.video || show.image) && <PodPanel language={language} />}
+      {show.music && <EnginePanel kind="music" open={open} t={t} c={c} />}
+      {(show.video || show.image || show.music) && <PodPanel language={language} />}
     </div>
     <button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.done}</button>
   </aside></div>;

@@ -458,3 +458,18 @@ html[data-theme='dark'] .scene-check.bad { color:#fca5a5; }
 .seg button{border:0;background:transparent;color:var(--ink-soft);padding:7px 13px;border-radius:999px;font-size:13px;cursor:pointer;display:grid;place-items:center}
 .seg button.on{background:var(--card);color:var(--ink);font-weight:700}
 .scene-count{font-weight:700;color:var(--ink)}
+
+/* ---- Music Engine ---- */
+.music-engine{display:flex;flex-direction:column;gap:18px;max-width:720px}
+.me-block{display:flex;flex-direction:column;gap:8px}.me-row{display:flex;align-items:center;gap:8px}.me-row select{flex:1;min-width:0;margin:0}
+.me-lock{display:flex;align-items:center;gap:5px;color:var(--amber-deep)}
+.me-script{min-height:220px}
+.me-check{font-size:13px;font-weight:600}.me-check.ok{color:#16a34a}.me-check.warn{color:#d97706}
+.me-adv{display:flex;align-items:center;justify-content:space-between;border:0;border-top:1px solid var(--line);background:transparent;color:var(--ink-soft);padding:12px 0 4px;font-size:14px;cursor:pointer}
+.me-adv-body{display:flex;flex-direction:column;gap:12px;font-size:13px}.me-adv-body label{display:flex;flex-direction:column;gap:6px}.me-adv-body .me-check-row{flex-direction:row;align-items:center}
+.me-ready{display:flex;align-items:center;gap:6px;color:var(--ink-soft)}.me-ready i{width:8px;height:8px;border-radius:50%;background:#9ca3af}.me-ready i.on{background:#22c55e}
+.me-term{background:#07110b;border:1px solid #14532d;border-radius:14px;padding:12px;color:#22c55e;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+.me-term-head{display:flex;justify-content:space-between;gap:8px;font-weight:700;text-shadow:0 0 8px rgba(34,197,94,.55)}
+.me-bar{height:6px;border-radius:99px;background:#0f2a1a;margin:8px 0;overflow:hidden}.me-bar i{display:block;height:100%;background:#22c55e;box-shadow:0 0 10px #22c55e;transition:width .4s}
+.me-term pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;text-shadow:0 0 6px rgba(34,197,94,.4)}
+.me-done{display:flex;flex-direction:column;gap:10px}.me-done audio{width:100%}.me-done-btns{display:flex;flex-wrap:wrap;gap:8px}
