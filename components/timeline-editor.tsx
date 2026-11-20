@@ -1,19 +1,19 @@
 'use client';
 
-import { api, getVideoEndpoint } from '@/lib/client/api';
-import { getPod, podAcquire, podRelease } from '@/lib/client/pod';
+import { api, getEngineEndpoint } from '@/lib/client/api';
+import { ensureGpu, gpuConn } from '@/lib/client/gpu';
+import { getPod, podAcquire, podRelease, podDetach } from '@/lib/client/pod';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Download, FolderOpen, Image as ImageIcon, Ghost, Music2, Mic2, Pause, Play, RectangleHorizontal, RectangleVertical, Trash2, Type, Upload, Wand2, X } from 'lucide-react';
 import { AutoEditor } from '@/components/auto-editor';
 import { CAMERAS, OVERLAYS, TRANSITIONS } from '@/lib/client/autoEdit';
 import {
-  BUILT_IN_FONTS, buildPayload, wmFontPx, wmPosition, WM, defaultFx, type FxSettings, cancelRender, canvasFor, defaultCaption, fmtTime, layout, readDropped, renderStatus, startRender, toAssets, tokenize, uid,
+  BUILT_IN_FONTS, buildPayload, wmFontPx, wmPosition, wmText, defaultWm, type WmCfg, type WmPlacement, defaultFx, type FxSettings, cancelRender, canvasFor, defaultCaption, fmtTime, layout, readDropped, renderStatus, startRender, toAssets, tokenize, uid,
   type AClip, type Asset, type AssetKind, type CaptionStyle, type RenderStatus, type Sub, type VClip,
 } from '@/lib/client/timeline';
 
 type Sel = { track: 'visual' | 'voice' | 'sub' | 'music'; id: string } | null;
-type Job = { id: string; base: string; key: string };
-const WM_DIVIDER = ' | ';
+type Job = { id: string; base: string; key: string; fin?: boolean };
 const PREFS = 'ips-tl-prefs';
 
 /* ---------------------------------------------------------------- media bin */
@@ -73,15 +73,17 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const [caption, setCaption] = useState<CaptionStyle>(defaultCaption);
   const [fontAsset, setFontAsset] = useState<File | null>(null);
   const [userFonts, setUserFonts] = useState<string[]>([]);
-  const [wmLeft, setWmLeft] = useState('Atom');      // the divider " | " between the two inputs is fixed in code (WM_DIVIDER)
-  const [wmRight, setWmRight] = useState('Feel');
-  const watermark = [wmLeft.trim(), wmRight.trim()].filter(Boolean).join(WM_DIVIDER);   // "Atom | Feel"; one side empty => no dangling divider
+  const [wm, setWm] = useState<WmCfg>(defaultWm);
+  /** Every watermark edit goes through here: while 🔒 is on, nothing but the lock itself can change. */
+  const setWmK = <K extends keyof WmCfg>(k: K, v: WmCfg[K]) => setWm((c) => (c.locked && k !== 'locked' ? c : { ...c, [k]: v }));
+  const watermark = wmText(wm);                      // "Atom | Feel" (split) or the single full name (full)
+  const [vTitle, setVTitle] = useState('');
   const [wake, setWake] = useState('');
   const [saved, setSaved] = useState<'' | 'yes' | 'no'>('');
   const [fx, setFx] = useState<FxSettings>(defaultFx);
   const setFxK = <K extends keyof FxSettings>(k: K, v: FxSettings[K]) => setFx((f) => ({ ...f, [k]: v }));
   const [wmOn, setWmOn] = useState(true);            // ON by default; OFF hides it everywhere but keeps the saved text
-  const wmEl = useRef<HTMLSpanElement | null>(null);
+  const wmEl = useRef<HTMLDivElement | null>(null);
   const canvasEl = useRef<HTMLDivElement | null>(null);
   const wmDrift = useRef(0);
   const [sel, setSel] = useState<Sel>(null);
@@ -102,8 +104,8 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const videoEl = useRef<HTMLVideoElement>(null);
 
   // remembered style + watermark text + ON/OFF
-  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (typeof p.wmLeft === 'string') { setWmLeft(p.wmLeft); setWmRight(String(p.wmRight ?? '')); } else if (typeof p.watermark === 'string' && !/^(ips\s*\|\s*media|@atom_edit|atom edit)$/i.test(p.watermark.trim())) { const [l, ...r] = p.watermark.split('|'); setWmLeft(l.trim()); setWmRight(r.join('|').trim()); } if (p.fx) setFx({ ...defaultFx, ...p.fx }); if (p.wmOn === false) setWmOn(false); } catch { /* ignore */ } }, []);
-  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, wmLeft, wmRight, wmOn, fx })); } catch { /* ignore */ } }, [caption, wmLeft, wmRight, wmOn, fx]);
+  useEffect(() => { try { const p = JSON.parse(localStorage.getItem(PREFS) ?? '{}'); if (p.caption) setCaption({ ...defaultCaption, ...p.caption, fontFile: null }); if (p.wm) setWm({ ...defaultWm, ...p.wm }); else if (typeof p.wmLeft === 'string') setWm((c) => ({ ...c, left: p.wmLeft, right: String(p.wmRight ?? '') })); if (p.fx) setFx({ ...defaultFx, ...p.fx }); if (p.wmOn === false) setWmOn(false); } catch { /* ignore */ } }, []);
+  useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify({ caption: { ...caption, fontFile: null }, wm, wmOn, fx })); } catch { /* storage full or blocked */ } }, [caption, wm, wmOn, fx]);
 
   const lay = useMemo(() => layout({ assets, visuals, voices, subs }), [assets, visuals, voices, subs]);
   const assetOf = useCallback((id: string) => assets.find((a) => a.id === id), [assets]);
@@ -199,17 +201,17 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
   const placeWm = useCallback((time: number) => {
     const el = wmEl.current, box = canvasEl.current; if (!el || !box) return;
     const kk = box.clientHeight / cv.h || 1;                      // preview px per output px
-    const { x, y } = wmPosition(time, cv.w, cv.h, el.offsetWidth / kk, el.offsetHeight / kk);
+    const { x, y } = wmPosition(time, cv.w, cv.h, el.offsetWidth / kk, el.offsetHeight / kk, wm.placement);
     el.style.left = `${(x / cv.w) * 100}%`; el.style.top = `${(y / cv.h) * 100}%`;
-  }, [cv.w, cv.h]);
-  useEffect(() => { placeWm(playing ? t : t + wmDrift.current); }, [t, playing, placeWm, wmOn, watermark, portrait, hd, curAsset?.id]);
+  }, [cv.w, cv.h, wm.placement]);
+  useEffect(() => { placeWm(playing ? t : t + wmDrift.current); }, [t, playing, placeWm, wmOn, watermark, wm.mark, wm.logoData, wm.sizePct, portrait, hd, curAsset?.id]);
   useEffect(() => {
-    if (!wmOn || playing) return;
+    if (!wmOn || playing || wm.placement !== 'ghost') return;
     let raf = 0, last = performance.now();
     const loop = (now: number) => { wmDrift.current += Math.min(0.1, (now - last) / 1000) * 0.5; last = now; placeWm(t + wmDrift.current); raf = requestAnimationFrame(loop); };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [wmOn, playing, t, placeWm]);
+  }, [wmOn, playing, t, placeWm, wm.placement]);
   useEffect(() => {
     const el = voiceEl.current; if (!el) return;
     const a = curVoice ? assetOf(curVoice.assetId) : undefined;
@@ -245,6 +247,11 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
       if (jobRef.current?.id !== job.id) return;
       try {
         const s = await renderStatus(job); setRs(s);
+        if (job.fin) {   // fire-and-forget: the GPU uploads the MP4 to Document, notifies you and stops the Pod by itself
+          if (s.status === 'DONE' && s.saved) { setSaved('yes'); setPhase('done'); podDetach('render'); return; }
+          if (s.status === 'FAILED' || s.status === 'CANCELLED') { setPhase('error'); setErr(s.status === 'CANCELLED' ? 'Cancelled.' : `${s.error || 'Render failed.'} (a notification was sent)`); return; }
+          continue;
+        }
         if (s.status === 'DONE') {
           // Save to Document FIRST: the MP4 lives on the Pod's disk, so the Pod may only stop after the cloud has the copy.
           let ok = false;
@@ -263,10 +270,20 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     if (lay.voices.length && lay.total > lay.visualTotal + 0.3) onNotice(`Voiceover (${lay.total.toFixed(1)}s) is longer than the visuals (${lay.visualTotal.toFixed(1)}s): the end will be cut. Use "Match voice length".`);
     cancelWake.current = false; setErr(''); setRs(null); setUpPct(0); setSaved(''); setPhase('uploading');
     try {
-      await podAcquire('render', getVideoEndpoint().url, setWake, () => cancelWake.current); setWake('');
-      const built = buildPayload({ assets, visuals, voices, subs, musicId, musicVolume, masterPrompt, reframe, portrait, hd, caption, fontAsset, watermark, wmOn, fx });
+      await podAcquire('render', getEngineEndpoint('video').url, setWake, () => cancelWake.current); setWake('');
+      const built = buildPayload({ assets, visuals, voices, subs, musicId, musicVolume, masterPrompt, reframe, portrait, hd, caption, fontAsset, watermark, wmOn, wm, fx });
       if (cancelWake.current) throw new Error('cancelled');
-      const job = await startRender(built, setUpPct);
+      await ensureGpu();
+      let fin = false;
+      if (gpuConn()) {   // Prepare (Vercel): signed upload slot + one-time token. Then the GPU works alone: lock the phone or close the app.
+        const title = vTitle.trim() || `Timeline ${new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '-')}`;
+        const pr = await fetch('/api/render/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+        const pd = await pr.json().catch(() => ({}));
+        if (!pr.ok || !pd.ok) throw new Error(pd.error || `prepare failed (${pr.status})`);
+        (built.payload as Record<string, unknown>).finalize = { callback: `${location.origin}/api/render/complete`, token: pd.token, uploadUrl: pd.uploadUrl, path: pd.path, name: pd.name, jobId: pd.jobId };
+        fin = true;
+      }
+      const job = { ...(await startRender(built, setUpPct)), fin };
       jobRef.current = job; setPhase('rendering'); void poll(job);
     } catch (e) {
       void podRelease('render'); setWake('');
@@ -330,7 +347,10 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
             {curAsset?.type === 'image' && <img src={curAsset.url} alt="" style={reframe && curAsset.focus ? { objectPosition: focusPos(curAsset.focus, cv.w / cv.h) } : undefined} />}
             {curAsset?.type === 'video' && <video ref={videoEl} src={curAsset.url} muted playsInline />}
             {!curAsset && <div className="tl-empty">Preview · {cv.w}×{cv.h}</div>}
-            {wmOn && watermark.trim() && <span className="tl-wm" ref={wmEl} style={{ fontSize: `${(wmFontPx(cv.w, cv.h) / cv.h) * 100}cqh`, opacity: WM.opacity, textShadow: `1px 1px 0 rgba(0,0,0,${WM.shadowOpacity})` }}>{watermark}</span>}
+            {wmOn && ((wm.mark !== 'logo' && watermark.trim()) || (wm.mark !== 'text' && wm.logoData)) && <div className="tl-wm" ref={wmEl} style={{ display: 'flex', alignItems: 'center', gap: '0.5em', fontSize: `${(wmFontPx(cv.w, cv.h, wm.sizePct) / cv.h) * 100}cqh`, opacity: wm.opacity, textShadow: `1px 1px 0 rgba(0,0,0,0.35)` }}>
+              {wm.mark !== 'text' && wm.logoData && /* eslint-disable-next-line @next/next/no-img-element */ <img src={wm.logoData} alt="" style={{ height: '2.4em', width: 'auto' }} />}
+              {wm.mark !== 'logo' && watermark.trim() && <span>{watermark}</span>}
+            </div>}
             {curVisual?.callout && <span className="tl-callout">{curVisual.callout}</span>}
             {curSub && <div className="tl-cap" style={capStyle}>
               {caption.anim === 'none' ? curSub.text : previewWords(curSub.text, curSub.start, curSub.end, t).map((w, i) =>
@@ -441,26 +461,53 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
     <details className="tl-panel" open>
       <summary><Ghost size={15} /> Watermark</summary>
       <div className="tl-wm-row">
-        <div className="wm-split">
-          <input className="wm-in" value={wmLeft} maxLength={40} placeholder="Atom" onChange={(e) => setWmLeft(e.target.value)} aria-label="Watermark left text" />
-          <span className="wm-div" aria-hidden="true">|</span>
-          <input className="wm-in" value={wmRight} maxLength={40} placeholder="Feel" onChange={(e) => setWmRight(e.target.value)} aria-label="Watermark right text" />
+        <div className="seg" role="group" aria-label="Watermark format">
+          <button type="button" className={wm.mode === 'split' ? 'on' : ''} disabled={wm.locked} onClick={() => setWmK('mode', 'split')}>Split |</button>
+          <button type="button" className={wm.mode === 'full' ? 'on' : ''} disabled={wm.locked} onClick={() => setWmK('mode', 'full')}>Full Name</button>
         </div>
+        <button type="button" className={`text-button ${wm.locked ? 'is-on' : ''}`} onClick={() => setWmK('locked', !wm.locked)} aria-pressed={wm.locked} title="Lock: freezes format, brand and placement until you unlock">{wm.locked ? '🔒 Locked' : '🔓 Lock'}</button>
         <button type="button" role="switch" className={`toggle ${wmOn ? 'is-on' : ''}`} onClick={() => setWmOn((v) => !v)} aria-checked={wmOn} aria-label={wmOn ? 'Turn watermark off' : 'Turn watermark on'}><span /></button>
         <span className="tl-lock">{wmOn ? 'ON' : 'OFF'}</span>
       </div>
-      <p className="access-help">Left | Right, for example your YouTube | Facebook channel names (the divider is fixed). ON: a small translucent ghost watermark floats diagonally across the whole frame in the preview and in the export, so it cannot be cropped or covered. OFF: hidden everywhere; your text stays saved.</p>
+      {wm.mark !== 'logo' && (wm.mode === 'split'
+        ? <div className="wm-split">
+          <input className="wm-in" value={wm.left} maxLength={40} placeholder="Atom" disabled={wm.locked} onChange={(e) => setWmK('left', e.target.value)} aria-label="Watermark left text" />
+          <span className="wm-div" aria-hidden="true">|</span>
+          <input className="wm-in" value={wm.right} maxLength={40} placeholder="Feel" disabled={wm.locked} onChange={(e) => setWmK('right', e.target.value)} aria-label="Watermark right text" />
+        </div>
+        : <input className="wm-in" style={{ width: '100%' }} value={wm.full} maxLength={80} placeholder="Your brand full name" disabled={wm.locked} onChange={(e) => setWmK('full', e.target.value)} aria-label="Watermark full name" />)}
+      <div className="tl-wm-row">
+        <div className="seg" role="group" aria-label="Watermark content">
+          {(['text', 'logo', 'both'] as const).map((m) => <button key={m} type="button" className={wm.mark === m ? 'on' : ''} disabled={wm.locked} onClick={() => setWmK('mark', m)}>{m === 'text' ? 'Text' : m === 'logo' ? 'Logo' : 'Both'}</button>)}
+        </div>
+        {wm.mark !== 'text' && <label className="text-button" style={{ cursor: wm.locked ? 'not-allowed' : 'pointer' }}>{wm.logoData ? 'Change logo (PNG)' : 'Upload logo (PNG)'}
+          <input type="file" accept="image/png" hidden disabled={wm.locked} onChange={(e) => {
+            const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
+            if (f.size > 600_000) { onNotice('Logo too big: use a PNG under 600 KB.'); return; }
+            const r = new FileReader(); r.onload = () => setWmK('logoData', String(r.result)); r.readAsDataURL(f);
+          }} /></label>}
+        {wm.mark !== 'text' && wm.logoData && <button type="button" className="text-button" disabled={wm.locked} onClick={() => setWmK('logoData', null)}>Remove logo</button>}
+      </div>
+      <div className="seg" role="group" aria-label="Watermark placement">
+        {([['ghost', 'Floating Ghost'], ['tl', 'Top-Left'], ['tr', 'Top-Right'], ['bl', 'Bottom-Left'], ['br', 'Bottom-Right']] as [WmPlacement, string][]).map(([v, l]) => <button key={v} type="button" className={wm.placement === v ? 'on' : ''} disabled={wm.locked} onClick={() => setWmK('placement', v)}>{l}</button>)}
+      </div>
+      <div className="tl-wm-row">
+        <label className="access-help">Opacity {Math.round(wm.opacity * 100)}% <input type="range" min={10} max={100} value={Math.round(wm.opacity * 100)} disabled={wm.locked} onChange={(e) => setWmK('opacity', Number(e.target.value) / 100)} /></label>
+        <label className="access-help">Size {wm.sizePct.toFixed(1)}% <input type="range" min={15} max={80} value={Math.round(wm.sizePct * 10)} disabled={wm.locked} onChange={(e) => setWmK('sizePct', Number(e.target.value) / 10)} /></label>
+      </div>
+      <p className="access-help">Split | = two fields with a centre divider (e.g. Atom | Feel); Full Name = one single name with no divider. Text, your own PNG logo, or both. Floating Ghost drifts across the whole frame so it cannot be cropped; or pin it to a corner. The preview and the export match 1:1. 🔒 Lock keeps the format, brand and placement frozen (and saved on this device) until you unlock. OFF hides it everywhere. On export, the file&apos;s internal tool tags are stripped; only your locked brand name is written as artist/comment.</p>
     </details>
 
     {/* 7 · export */}
     <div className="tl-export">
+      <input className="studio-input" value={vTitle} maxLength={80} placeholder="Video title (optional, used for the file name and the notification)" onChange={(e) => setVTitle(e.target.value)} aria-label="Video title" disabled={busy} />
       <button type="button" className="primary-button big-copy" onClick={doExport} disabled={busy || !visuals.length}><Download size={16} /> Export Video · {cv.w}×{cv.h}</button>
       {busy && <div className="tl-progress"><div className="tl-bar-track"><i style={{ width: `${phase === 'uploading' ? upPct * 0.5 : 50 + (rs?.progress ?? 0) / 2}%` }} /></div>
         <span>{phase === 'uploading' && wake ? `⚡ ${wake}` : phase === 'uploading' ? `Uploading to render server… ${upPct}%` : `${rs?.stage ?? 'Starting'} · ${Math.round(rs?.progress ?? 0)}%`}</span>
         <button type="button" className="text-button" onClick={doCancel}>Cancel</button></div>}
-      {phase === 'done' && <div className="access-status ok">{saved === 'yes' ? 'Done. Saved to Document (the GPU is stopping).' : <>Done. {rs?.url && <a href={rs.url} download target="_blank" rel="noreferrer">Download MP4</a>}</>}</div>}
+      {phase === 'done' && <div className="access-status ok">{saved === 'yes' ? 'Done. Saved to Document (the GPU stops by itself).' : <>Done. {rs?.url && <a href={rs.url} download target="_blank" rel="noreferrer">Download MP4</a>}</>}</div>}
       {phase === 'error' && <div className="access-status bad">{err}</div>}
-      <p className="access-help">Sends the timeline (clips, exact durations, animation prompts, reframe, captions, watermark) as one JSON job to your RunPod GPU render server. With Auto-Start & Auto-Stop on (Command Center), the Pod wakes for the export, the video is saved to Document, then the Pod stops. If this device goes offline, the Pod stops itself after 3 minutes.</p>
+      <p className="access-help">Sends the timeline (clips, exact durations, animation prompts, reframe, captions, watermark) to your RunPod GPU as one job. After the upload you can lock your phone or close the app: the export keeps running in the cloud, saves the MP4 straight into Document, sends you a notification, and the Pod stops itself.</p>
     </div>
     <audio ref={voiceEl} hidden /><audio ref={musicEl} hidden />
   </section>;

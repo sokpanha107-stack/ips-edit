@@ -85,7 +85,10 @@ async def render(signature_voice: UploadFile | None = File(None), rvc_index: Upl
     if rvc_index is not None and rvc_index.filename:
         index = d / 'model.index'; index.write_bytes(await rvc_index.read())
     JOBS[jid] = {'status': 'QUEUED', 'step': 2, 'percent': 15, 'logs': ['● [2/7] ទទួលបានការងារ… ចូលជួរ GPU'], 'error': None, 'mp3_filename': None, 'duration_sec': None, 'supabase_saved': False, 'cancel': False, 'created': time.time()}
-    threading.Thread(target=_work, args=(jid, p, voice, index, {'url': signed_upload_url, 'cb': complete_callback_url, 'token': complete_token}), daemon=True).start()
+    up = {'url': signed_upload_url, 'cb': complete_callback_url, 'token': complete_token}
+    JOBS[jid]['fin'] = {'cb': complete_callback_url, 'token': complete_token}      # read by the Omni-Worker (failure alerts, timeouts)
+    JOBS[jid]['spec'] = {'p': p, 'voice': str(voice), 'index': str(index) if index else None, 'up': up}   # lets the Omni-Worker resume after a crash
+    threading.Thread(target=_work, args=(jid, p, voice, index, up), daemon=True).start()
     return {'job_id': jid}
 
 

@@ -39,4 +39,5 @@ def hardware():
 
 
 image_api.register(app)
+idle.BUSY = lambda: any(j['status'] in ('QUEUED', 'RUNNING') for j in list(image_api.JOBS.values()))
 idle.start(app)

@@ -1,4 +1,4 @@
-# IPS edit - RunPod Serverless worker for Wan2.2 TI2V-5B (image -> video).
+# Atom Edit - RunPod Serverless worker for Wan2.2 TI2V-5B (image -> video).
 # Weights (~34 GB) are NOT baked in: they live on a Network Volume mounted at /runpod-volume.
 FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel
 

@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const body = z.object({
-  service: z.enum(['runpod', 'voice_api', 'gemini', 'video']),
+  service: z.enum(['runpod', 'voice_api', 'gemini', 'video', 'gpu', 'telegram']),
   key: z.string().trim().max(500).optional(),
   endpoint: z.string().trim().max(500).optional(),
 });
@@ -26,7 +26,7 @@ export async function PUT(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   const { service, key, endpoint } = parsed.data;
   try {
-    if (endpoint) endpointBase(endpoint);   // reject unsafe URLs before saving
+    if (endpoint && service !== 'telegram') endpointBase(endpoint);   // reject unsafe URLs before saving
     const cred = await saveCredential(au.ctx.db, au.ctx.userId, service, key, endpoint);
     const result = await testCredential(service, cred);
     await recordStatus(au.ctx.db, au.ctx.userId, service, result.ok);

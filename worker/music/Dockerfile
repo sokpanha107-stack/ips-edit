@@ -11,6 +11,6 @@ RUN git clone --depth 1 https://github.com/ace-step/ACE-Step /opt/ACE-Step && pi
 RUN git clone --depth 1 https://github.com/Plachtaa/seed-vc /opt/seed-vc && pip install --no-cache-dir -r /opt/seed-vc/requirements.txt || true
 RUN git clone --depth 1 https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI /opt/rvc && pip install --no-cache-dir -r /opt/rvc/requirements.txt || true
 COPY . .
-ENV MUSIC_KEY="" IPS_IDLE_STOP=1
+ENV MUSIC_KEY="" ATOM_IDLE_STOP=1
 EXPOSE 8000
 CMD ["uvicorn", "music_api:app", "--host", "0.0.0.0", "--port", "8000"]

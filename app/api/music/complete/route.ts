@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireUser } from '@/lib/backend/session';
 import { readMusicToken } from '@/lib/backend/musicToken';
 import { adminClient } from '@/lib/supabase/admin';
-import { notifyUser } from '@/lib/backend/push';
+import { handleComplete } from '@/lib/backend/gpuComplete';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,13 +22,14 @@ async function register(db: SupabaseClient, userId: string, path: string, name: 
   if (have.data) return { status: 200, id: have.data.id as string, already: true };
   const ins = await db.from('documents').insert({ user_id: userId, parent_id: null, kind: 'file', name, storage_path: path, mime: 'audio/mpeg', size_bytes: Number((obj.metadata as { size?: number } | null)?.size ?? 0), source: 'voice' }).select('id').single();
   if (ins.error) return { status: 500, error: ins.error.message };
-  await notifyUser(db, userId, { title: '✅ Song Ready!', body: `${name} is saved in Document.`, url: '/?tab=documents', tag: 'job-music' }).catch(() => undefined);
   return { status: 200, id: ins.data.id as string };
 }
 
 /** Called by the RunPod worker (one-time HMAC token, no session) or by the signed-in browser (fallback upload). */
 export async function POST(req: Request) {
-  const parsed = body.safeParse(await req.json().catch(() => null));
+  const raw = await req.json().catch(() => null);
+  if (raw && typeof raw === 'object' && 'token' in raw && ('event' in raw || !('path' in raw))) return handleComplete('music', new Request(req.url, { method: 'POST', body: JSON.stringify(raw) }));
+  const parsed = body.safeParse(raw);
   if (!parsed.success) return NextResponse.json({ error: 'invalid request' }, { status: 400, headers: CORS });
   const { token, path, name } = parsed.data;
   if (token) {

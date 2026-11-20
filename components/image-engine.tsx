@@ -1,6 +1,8 @@
 'use client';
 
-import { podAcquire, podRelease } from '@/lib/client/pod';
+import { podAcquire, podRelease, podDetach } from '@/lib/client/pod';
+import { ensureGpu, gpuConn } from '@/lib/client/gpu';
+import { browserClient } from '@/lib/supabase/browser';
 import { onHandoff } from '@/lib/client/handoff';
 import { setBatchProgress } from '@/lib/client/progress';
 import { api, getEngineEndpoint } from '@/lib/client/api';
@@ -30,7 +32,7 @@ const JOBKEY = 'ips-image-job';
 const pad = (i: number) => String(i + 1).padStart(3, '0');
 
 /** What survives a reload: the GPU job, the Document folder, and which scenes are already safely saved. */
-interface Rec { job: ImageJob; folder: string; prompts: string[]; offset: number; folderId?: string; saved: number[]; opt: ImageOptions; aspect: Aspect }
+interface Rec { job: ImageJob; folder: string; prompts: string[]; offset: number; folderId?: string; saved: number[]; opt: ImageOptions; aspect: Aspect; fin?: { paths: Record<number, string> } }
 const readRec = (): Rec | null => { try { return JSON.parse(localStorage.getItem(JOBKEY) || 'null'); } catch { return null; } };
 const writeRec = (r: Rec | null) => { try { if (r) localStorage.setItem(JOBKEY, JSON.stringify(r)); else localStorage.removeItem(JOBKEY); } catch { /* ignore */ } };
 /** Contiguous count of saved scenes from Scene 1 = where a restart continues. */
@@ -95,8 +97,18 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
     const sig = await dataUrlToFile(await cropToAspect(ref.url, r.aspect), ref.name);
     await podAcquire('image', ep0.url, (m) => setWake(m), () => false);
     setWake('');
+    await ensureGpu();
+    if (gpuConn()) {   // Atom GPU: fire-and-forget. The GPU uploads every scene to Document itself and notifies you, even if this phone locks.
+      const slice = r.prompts.slice(from);
+      const pr = await fetch('/api/image/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder: r.folder, scenes: slice.length, pad: 3, from, folderId: r.folderId }) });
+      const pd = await pr.json().catch(() => ({}));
+      if (!pr.ok || !pd.ok) throw new Error(pd.error || `prepare failed (${pr.status})`);
+      const job = await startImageJob(sig, slice, r.opt, { pad: 3, finalize: { callback: `${location.origin}/api/image/complete`, token: pd.token, slots: pd.slots, offset: from, jobId: pd.jobId } });
+      const paths: Record<number, string> = {}; for (const sl of pd.slots as { index: number; path: string }[]) paths[sl.index] = sl.path;
+      return { ...r, job, offset: from, folderId: pd.folderId ?? r.folderId, fin: { paths } };
+    }
     const job = await startImageJob(sig, r.prompts.slice(from), r.opt);
-    return { ...r, job, offset: from };
+    return { ...r, job, offset: from, fin: undefined };
   }, []);
 
   const latest = useRef({ launch, onImages, onNotice, c });
@@ -114,6 +126,22 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
       try {
         const s = await imageStatus(rec.job);
         netFails = 0;
+        if (rec.fin) {   // fire-and-forget: the GPU saves scenes to Document; here we only mirror progress and fill the Timeline media bin
+          const n = rec.offset + (s.saved ?? 0);
+          const paths = rec.fin.paths;
+          if (n > rec.saved.length) { rec = { ...rec, saved: Array.from({ length: n }, (_, i) => i) }; writeRec(rec); }
+          setDoneN(rec.saved.length); setBatchProgress({ label: 'Image', done: rec.saved.length, total: rec.prompts.length });
+          for (const g of rec.saved) {
+            if (added.current.has(g) || !paths[g]) continue;
+            added.current.add(g);
+            const name = `scene-${pad(g)}.png`;
+            try { const dl = await browserClient().storage.from('documents').download(paths[g]); if (dl.data) { const f = new File([dl.data], name, { type: 'image/png' }); await latest.current.onImages([f]); setThumbs((t) => [...t, { name, url: URL.createObjectURL(f) }]); } } catch { /* the cloud copy is safe; Document has it */ }
+            if (!live()) return;
+          }
+          if (rec.saved.length >= rec.prompts.length) { writeRec(null); setBatchProgress(null); setPhase('done'); setStage('stopped'); podDetach('image'); latest.current.onNotice(latest.current.c.done); return; }
+          if (s.status === 'FAILED' || s.status === 'CANCELLED') throw Object.assign(new Error(s.error || 'job stopped'), { fatal: true });
+          continue;
+        }
         for (const im of s.images) {
           const g = rec.offset + im.index;
           if (rec.saved.includes(g)) continue;
@@ -137,6 +165,7 @@ export function ImageEngine({ language, onImages, onNotice }: { language: 'en' |
         if (s.status === 'DONE') throw Object.assign(new Error('incomplete'), { lost: true });   // finished but some scenes were not saved: restart those
       } catch (e) {
         if (!live()) return;
+        if ((e as { fatal?: boolean }).fatal) { setBatchProgress(null); setPhase('paused'); setFailAt(nextIndex(rec) + 1); setErr(`${(e as Error).message} · ${latest.current.c.paused(nextIndex(rec), nextIndex(rec) + 1)}`); return; }
         const lost = (e as { lost?: boolean }).lost || !(e instanceof TypeError);       // network drop = TypeError; anything else = the GPU forgot the job
         if (!lost) { netFails += 1; if (netFails < 20) { await wait(3000); continue; } }
         try { rec = await latest.current.launch(rec); writeRec(rec); latest.current.onNotice(latest.current.c.resumed(nextIndex(rec) + 1)); netFails = 0; continue; }

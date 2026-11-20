@@ -115,7 +115,9 @@ def master(inst: Path, vocal: Path, p: dict, out_mp3: Path, work: Path):
     mix = pyln.normalize.loudness(mix, loud, -14.0)
     mix = Pedalboard([Limiter(threshold_db=-1.0)])(mix, SR)
     wav = work / 'final.wav'; sf.write(str(wav), mix, SR, subtype='PCM_24')
-    run(['ffmpeg', '-y', '-i', str(wav), '-codec:a', 'libmp3lame', '-b:a', '320k', '-ar', '44100', '-ac', '2', '-metadata', f"title={p.get('title', 'Song')}", str(out_mp3)])
+    run(['ffmpeg', '-y', '-i', str(wav), '-codec:a', 'libmp3lame', '-b:a', '320k', '-ar', '44100', '-ac', '2',
+         '-map_metadata', '-1', '-fflags', '+bitexact', '-flags:a', '+bitexact', '-id3v2_version', '3',   # white-label: no encoder / tool tags
+         '-metadata', f"title={p.get('title', 'Song')}", *(['-metadata', f"artist={p['brand']}", '-metadata', f"comment={p['brand']}"] if p.get('brand') else []), str(out_mp3)])
     dur = float(run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', str(out_mp3)]).strip() or 0)
     if dur < 10: raise RuntimeError('The .mp3 failed its integrity check')
     return dur
