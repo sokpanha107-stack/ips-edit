@@ -1,5 +1,5 @@
 # ===== Cell 2: IPS GPU API server (Wan2.2 TI2V-5B). Hardware-agnostic: T4 / L4 / A100. =====
-# Prints an API URL + API KEY. Put both in IPS edit -> Command Center -> Video Engine -> Connect.
+# Prints an API URL + API KEY. Put both in Atom Edit -> Command Center -> Video Engine -> Connect.
 import asyncio, base64, hmac, io, json, math, os, queue, re, secrets, shutil, subprocess, sys, threading, time, traceback, uuid
 
 ROLE = os.environ.get('IPS_ROLE', 'both')   # 'both' | 'video' | 'image': use 'image' on a second Colab so the Wan model is not loaded there
@@ -466,7 +466,7 @@ image_api.register(app, lambda: PUBLIC_URL)
 @app.get('/health')
 def ping(): return hardware()
 
-@app.post('/run')                      # async: what IPS edit uses (RunPod-style contract)
+@app.post('/run')                      # async: what Atom Edit uses (RunPod-style contract)
 async def run(body: dict):
     try: jid = enqueue(body)
     except Exception as e: return JSONResponse({'error': str(e)}, status_code=400)
@@ -520,7 +520,7 @@ if __name__ == '__main__' and not TEST:
     print('  API URL :', PUBLIC_URL)
     print('  API KEY :', API_KEY)
     print('=' * 64)
-    print('Copy both into IPS edit -> Command Center -> Video Engine -> Connect.')
+    print('Copy both into Atom Edit -> Command Center -> Video Engine -> Connect.')
     print('Keep this cell running. The model loads in the background; the green light shows when ready.\n')
     while True:
         time.sleep(300)

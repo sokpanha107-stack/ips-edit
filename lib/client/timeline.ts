@@ -1,5 +1,5 @@
 /** Pure logic for the Timeline Editor: media import, timeline math, caption words, export payload and upload. */
-import { getVideoEndpoint } from './api';
+import { getEngineEndpoint } from './api';
 import { audioDuration } from './autoEdit';
 
 export type AssetKind = 'visual' | 'voice' | 'music';
@@ -203,7 +203,7 @@ const headersOf = (key: string): Record<string, string> => (key ? { Authorizatio
 
 /** Uploads straight from the browser to the GPU/render server (big files cannot go through Vercel). Reports upload % then render %. */
 export function startRender(p: { payload: unknown; files: Record<string, File> }, onUpload: (pct: number) => void): Promise<{ id: string; base: string; key: string }> {
-  const ep = getVideoEndpoint();
+  const ep = getEngineEndpoint('video');
   return new Promise((resolve, reject) => {
     if (!ep.url) return reject(new Error('NO_ENDPOINT'));
     if (/runpod\.ai/i.test(ep.url)) return reject(new Error('RUNPOD'));

@@ -6,6 +6,7 @@
  * The Pod ID is stored only on this device; the RunPod API key stays in the encrypted Vault (the server route does the calls).
  * A watchdog inside the Pod (worker/render/render_api.py) is the safety net if this device goes offline mid-job.
  */
+import { ensureGpu, gpuRoot } from './gpu';
 const K = 'ips-pod';
 export type PodSettings = { podId: string; auto: boolean };
 /** Auto is ON unless the user switched it off after this version (older saves without `v` get the new default). */
@@ -44,9 +45,10 @@ export const podLeases = () => leases.size;
  */
 export async function podAcquire(job: string, endpointUrl: string, onStage?: (msg: string) => void, cancelled?: () => boolean): Promise<void> {
   leases.add(job);
+  await ensureGpu();
   const p = getPod();
   if (!p.auto || !p.podId) return;
-  const base = podHealthBase(endpointUrl, p.podId);
+  const base = gpuRoot() || podHealthBase(endpointUrl, p.podId);   // Omni-Worker: /health lives at the root, not under /image
   if (await healthOk(base)) return;                                   // already awake
   const st = await podCall('status', p.podId);
   if (!st.ok) throw new Error(st.error || 'Could not read the RunPod Pod status.');
@@ -71,3 +73,6 @@ export async function podRelease(job: string): Promise<void> {
   const p = getPod();
   if (leases.size === 0 && p.auto && p.podId) await podCall('stop', p.podId);
 }
+
+/** Drops the lease WITHOUT stopping the Pod: used when the Omni-Worker finishes the job on its own and stops the Pod itself after the upload is confirmed. */
+export function podDetach(job: string) { leases.delete(job); }

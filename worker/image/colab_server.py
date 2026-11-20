@@ -73,7 +73,7 @@ if __name__ == '__main__':
     print('  IMAGE API URL :', PUBLIC_URL)
     print('  API KEY       :', API_KEY)
     print('=' * 64)
-    print('Copy both into IPS edit -> Command Center -> Image Engine -> Connect.')
+    print('Copy both into Atom Edit -> Command Center -> Image Engine -> Connect.')
     print('Keep this cell running. The model loads when the first batch starts (a few minutes the first time).\n')
     while True:
         time.sleep(300)

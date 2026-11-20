@@ -3,8 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { config } from './config';
 import { fetchJson, normalizeBase } from './endpoint';
 
-export type Service = 'runpod' | 'voice_api' | 'gemini' | 'video';
-export const SERVICES: Service[] = ['runpod', 'voice_api', 'gemini', 'video'];
+export type Service = 'runpod' | 'voice_api' | 'gemini' | 'video' | 'gpu' | 'telegram';
+export const SERVICES: Service[] = ['runpod', 'voice_api', 'gemini', 'video', 'gpu', 'telegram'];
 
 /* ---------- AES-256-GCM: the database only ever holds ciphertext ---------- */
 function secretKey(): Buffer {
@@ -85,6 +85,12 @@ export async function testCredential(service: Service, cred: Credential): Promis
     if (service === 'gemini') {
       const r = await fetchJson('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', { headers: { 'x-goog-api-key': cred.key } });
       return r.ok ? { ok: true, message: 'Gemini key accepted.' } : { ok: false, message: r.status === 400 || r.status === 403 ? 'Google rejected this key.' : `Gemini check failed (${r.status}).` };
+    }
+    if (service === 'telegram') {
+      const r = await fetchJson(`https://api.telegram.org/bot${encodeURIComponent(cred.key)}/getMe`, {});
+      if (!r.ok) return { ok: false, message: 'Telegram rejected this bot token.' };
+      if (!/^-?\d{5,20}$/.test(cred.endpoint.trim())) return { ok: false, message: 'Enter your numeric Chat ID in the second field.' };
+      return { ok: true, message: 'Bot token accepted. Alerts go to that Chat ID.' };
     }
     const auth = { Authorization: `Bearer ${cred.key}` };
     if (service === 'runpod' && !cred.endpoint) {

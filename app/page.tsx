@@ -19,6 +19,7 @@ import { MusicEngine } from '@/components/music-engine';
 import { MusicLibrary } from '@/components/music-library';
 import { LibraryTabs, type LibraryTab } from '@/components/library-tabs';
 import { CommandCenter } from '@/components/command-center';
+import { startGpuKeepalive } from '@/lib/client/gpu';
 import { useHeartbeat } from '@/lib/client/heartbeat';
 import { addVoice, blobToDataUrl, deleteVoices as dbDeleteVoices, fmtLen, getVoiceBlob, listVoices, type VoiceMeta } from '@/lib/client/voiceStore';
 import { api, getVideoEndpoint, isFinished, splitScenes, type JobView, type VaultService } from '@/lib/client/api';
@@ -286,6 +287,7 @@ export default function Home() {
   const timelineRef = useRef<TimelineHandle>(null);
   const setFeatures = (f: FeatureCfg[]) => { setFeaturesState(f); saveFeatures(f); };
   useEffect(() => { setFeaturesState(loadFeatures()); const sync = (e: StorageEvent) => { if (e.key === 'ips-features') setFeaturesState(loadFeatures()); }; window.addEventListener('storage', sync); return () => window.removeEventListener('storage', sync); }, []);
+  useEffect(() => { startGpuKeepalive(); }, []);   // Atom GPU Engine: keeps the 1-hour HMAC token fresh while the app is open
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
   const [eyeCare, setEyeCare] = useState(false);

@@ -1,4 +1,4 @@
-"""Atom Edit · Music Engine idle watchdog (same rule as render_api.py): no API request for 3 minutes => stop this RunPod Pod."""
+"""Atom Edit · Music Engine idle watchdog: no API request AND no running job for 3 minutes => stop this RunPod Pod. Inside the Omni-Worker (ATOM_EMBEDDED=1) the Omni watchdog does this instead."""
 import os, subprocess, threading, time, urllib.request
 from pathlib import Path
 
@@ -11,6 +11,10 @@ INFLIGHT = {'n': 0}
 def touch():
     try: ACTIVITY_FILE.touch()
     except OSError: pass
+
+
+IDLE_ON = os.environ.get('ATOM_IDLE_STOP', os.environ.get('IPS_IDLE_STOP', '1')) != '0'   # ATOM_IDLE_STOP, with the old IPS_IDLE_STOP as fallback
+EMBEDDED = os.environ.get('ATOM_EMBEDDED') == '1'
 
 
 def _stop_pod() -> bool:
@@ -40,12 +44,12 @@ def stop_after(seconds: int):
     """Job finished and saved: stop the Pod after a short grace period (lets the app read the final status) unless a new job started."""
     def _go():
         time.sleep(seconds)
-        if INFLIGHT['n'] == 0 and os.environ.get('RUNPOD_POD_ID') and os.environ.get('IPS_IDLE_STOP', '1') != '0': _stop_pod()
+        if INFLIGHT['n'] == 0 and os.environ.get('RUNPOD_POD_ID') and IDLE_ON and not EMBEDDED: _stop_pod()
     threading.Thread(target=_go, daemon=True).start()
 
 
 def start(app):
-    """Adds the activity middleware and the timer thread. No-op outside a RunPod Pod (or with IPS_IDLE_STOP=0)."""
+    """Adds the activity middleware and the timer thread. No-op outside a RunPod Pod (or with ATOM_IDLE_STOP=0)."""
     @app.middleware('http')
     async def activity(request, call_next):
         counts = request.method != 'OPTIONS' and request.url.path not in ('/health', '/ping')
@@ -54,5 +58,5 @@ def start(app):
         finally:
             if counts: INFLIGHT['n'] -= 1; touch()
     touch()
-    if os.environ.get('RUNPOD_POD_ID') and os.environ.get('IPS_IDLE_STOP', '1') != '0':
+    if os.environ.get('RUNPOD_POD_ID') and IDLE_ON and not EMBEDDED:
         threading.Thread(target=_loop, daemon=True).start()

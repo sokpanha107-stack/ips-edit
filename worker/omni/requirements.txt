@@ -1,0 +1,4 @@
+# Omni-Worker = the three engines' requirements together (start.sh installs this + the engines' own files)
+-r ../image/requirements.txt
+-r ../render/requirements.txt
+-r ../music/requirements.txt

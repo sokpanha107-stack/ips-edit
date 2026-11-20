@@ -1,7 +1,7 @@
 import { getEngineEndpoint } from './api';
 
 export interface ImageJob { id: string; base: string; key: string }
-export interface ImageStatus { status: 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED'; progress: number; stage: string; done: number; total: number; error?: string | null; images: { index: number; name: string; url: string }[] }
+export interface ImageStatus { status: 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED'; progress: number; stage: string; done: number; total: number; saved?: number; error?: string | null; images: { index: number; name: string; url: string }[] }
 export interface ImageOptions { width: number; height: number; scale: number; steps: number; seed: string; negative: string }
 
 const hdr = (key: string): Record<string, string> => (key ? { Authorization: `Bearer ${key}` } : {});
@@ -11,8 +11,8 @@ export function parsePrompts(raw: string, suffix = ''): string[] {
   return raw.split(/\r?\n/).map((l) => l.replace(/^\s*(scene\s*\d+|\d+)\s*[.):\-–]\s*/i, '').trim()).filter(Boolean).map((l) => (suffix.trim() ? `${l}, ${suffix.trim()}` : l));
 }
 
-/** POST /api/generate-image on the Image Engine: the Signature Image + an array of scene prompts (max 100). Goes straight from the browser to your GPU server. */
-export function startImageJob(signature: File, prompts: string[], opt: ImageOptions): Promise<ImageJob> {
+/** POST /api/generate-image on the Image Engine: the Signature Image + an array of scene prompts (unlimited, checkpointed). Goes straight from the browser to your GPU server. */
+export function startImageJob(signature: File, prompts: string[], opt: ImageOptions, extra: Record<string, unknown> = {}): Promise<ImageJob> {
   const ep = getEngineEndpoint('image');
   return new Promise((resolve, reject) => {
     if (!ep.url) return reject(new Error('NO_ENDPOINT'));
@@ -20,7 +20,7 @@ export function startImageJob(signature: File, prompts: string[], opt: ImageOpti
     const base = ep.url.trim().replace(/\/+$/, '');
     const form = new FormData();
     form.append('signature', signature, signature.name);
-    form.append('payload', JSON.stringify({ prompts, width: opt.width, height: opt.height, scale: opt.scale, steps: opt.steps, seed: opt.seed.trim() ? Number(opt.seed) : null, negative: opt.negative.trim() || undefined }));
+    form.append('payload', JSON.stringify({ prompts, width: opt.width, height: opt.height, scale: opt.scale, steps: opt.steps, seed: opt.seed.trim() ? Number(opt.seed) : null, negative: opt.negative.trim() || undefined, ...extra }));
     fetch(`${base}/api/generate-image`, { method: 'POST', headers: hdr(ep.key), body: form })
       .then(async (res) => {
         const d = await res.json().catch(() => ({}));

@@ -8,6 +8,8 @@ export interface JobView {
 }
 export const isFinished = (s: JobStatus) => s === 'completed' || s === 'partial' || s === 'failed' || s === 'cancelled';
 
+import { gpuConn, PREFIX } from './gpu';
+
 const VIDEO_EP = 'ips-video-endpoint';
 export interface VideoEndpoint { url: string; key: string }
 export function getVideoEndpoint(): VideoEndpoint {
@@ -19,6 +21,8 @@ const IMAGE_EP = 'ips-image-endpoint';
 export type EngineKind = 'video' | 'image' | 'music';
 const EP_KEY: Record<'image' | 'music', string> = { image: IMAGE_EP, music: 'ips-music-endpoint' };
 export const getEngineEndpoint = (k: EngineKind): VideoEndpoint => {
+  const g = gpuConn();      // Atom GPU Engine (Omni-Worker) saved in the Vault: all three engines use it, authenticated by a short-lived HMAC token
+  if (g) return { url: `${g.base}${PREFIX[k === 'video' ? 'render' : k]}`, key: g.token };
   if (k === 'video') return getVideoEndpoint();
   try { const v = JSON.parse(window.localStorage.getItem(EP_KEY[k]) ?? '{}'); return { url: String(v.url ?? ''), key: String(v.key ?? '') }; } catch { return { url: '', key: '' }; }
 };
@@ -42,7 +46,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export interface VaultService { service: 'runpod' | 'voice_api' | 'gemini' | 'video'; hasKey: boolean; hint: string; endpoint: string | null; status: 'connected' | 'failed' | null; checkedAt: string | null }
+export interface VaultService { service: 'runpod' | 'voice_api' | 'gemini' | 'video' | 'gpu' | 'telegram'; hasKey: boolean; hint: string; endpoint: string | null; status: 'connected' | 'failed' | null; checkedAt: string | null }
 
 export interface PromptSummary { id: string; title: string; created_at: string; chars: number; preview: string }
 export interface PromptFull { id: string; title: string; content: string; created_at: string }

@@ -6,6 +6,7 @@ IDLE_TIMEOUT_SECONDS = 180
 ACTIVITY_FILE = Path(os.environ.get('IPS_ACTIVITY_FILE', '/tmp/ips_last_activity'))   # shared with the render server on the same Pod
 _STARTED = time.time()
 INFLIGHT = {'n': 0}
+BUSY = lambda: False   # set by main.py: True while an image batch is queued/running (a locked phone never makes it idle)
 
 
 def touch():
@@ -31,13 +32,13 @@ def _loop():
         time.sleep(10)
         try: last = max(_STARTED, ACTIVITY_FILE.stat().st_mtime)
         except OSError: last = _STARTED
-        if INFLIGHT['n'] > 0 or time.time() - last < IDLE_TIMEOUT_SECONDS: continue
+        if INFLIGHT['n'] > 0 or BUSY() or time.time() - last < IDLE_TIMEOUT_SECONDS: continue
         if _stop_pod(): return
         time.sleep(60)
 
 
 def start(app):
-    """Adds the activity middleware and the timer thread. No-op outside a RunPod Pod (or with IPS_IDLE_STOP=0)."""
+    """Adds the activity middleware and the timer thread. No-op outside a RunPod Pod (or with ATOM_IDLE_STOP=0)."""
     @app.middleware('http')
     async def activity(request, call_next):
         counts = request.method != 'OPTIONS' and request.url.path not in ('/health', '/ping')
@@ -46,5 +47,5 @@ def start(app):
         finally:
             if counts: INFLIGHT['n'] -= 1; touch()
     touch()
-    if os.environ.get('RUNPOD_POD_ID') and os.environ.get('IPS_IDLE_STOP', '1') != '0':
+    if os.environ.get('RUNPOD_POD_ID') and os.environ.get('ATOM_IDLE_STOP', os.environ.get('IPS_IDLE_STOP', '1')) != '0':
         threading.Thread(target=_loop, daemon=True).start()

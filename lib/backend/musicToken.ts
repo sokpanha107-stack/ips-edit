@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
 /** One-time job token for the Music Engine: lets the RunPod worker finish ONE upload for ONE user without ever holding a Supabase key. */
-export interface MusicClaims { u: string; p: string; n: string; e: number }
+/** u user · p storage path (or path PREFIX for multi-file jobs) · n file name · t display title · f Document folder id · j gpu_jobs id · e expiry */
+export interface MusicClaims { u: string; p: string; n: string; e: number; t?: string; f?: string; j?: string }
 
 const secret = () => (process.env.MUSIC_TOKEN_SECRET || process.env.VAULT_ENCRYPTION_KEY || '').trim();
 const b64 = (s: string | Buffer) => Buffer.from(s).toString('base64url');

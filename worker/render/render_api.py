@@ -202,24 +202,44 @@ def wrap_tokens(tokens, max_chars):
     return breaks
 
 
-def watermark_filter(cfg: dict, W: int, H: int, fontfile: str | None) -> str:
-    """Anti-theft ghost watermark as ONE drawtext filter (no extra passes, NVENC-friendly).
-    Size 2.5% of the shorter side, white@0.28 + black@0.35 1px shadow, bouncing diagonally with triangle waves
-    (vx 55 / vy 42 px/s on a 720px short side, scaled with resolution). Mirrors wmPosition() in lib/client/timeline.ts.
-    A payload without style 'ghost' (older client) keeps the legacy fixed top-left mark."""
-    ff = f'fontfile={fontfile}:' if fontfile else ''
-    if cfg.get('style') != 'ghost':
-        return f'drawtext=textfile=wm.txt:{ff}x=w*0.04:y=h*0.035:fontsize=h*0.032:fontcolor=white@0.88:shadowcolor=black@0.6:shadowx=2:shadowy=2'
+def _wm_xy(cfg: dict, W: int, H: int, mw: str, mh: str, tw: str, th: str):
+    """x / y expressions for the watermark element (text or logo). mw/mh = canvas width/height names, tw/th = element width/height names.
+    placement 'ghost' = floating anti-crop triangle wave; 'tl' | 'tr' | 'bl' | 'br' = fixed corner. Mirrors wmPosition() in lib/client/timeline.ts."""
     short = min(W, H); k = short / 720.0
-    size = max(8, round(short * float(cfg.get('sizePct', 2.5)) / 100))
     m = short * float(cfg.get('marginPct', 3.5)) / 100
+    pl = cfg.get('placement') or ('ghost' if cfg.get('style') == 'ghost' else 'tl')
+    if pl in ('tl', 'tr', 'bl', 'br'):
+        x = f'{m:.2f}' if pl[1] == 'l' else f'{mw}-{tw}-{m:.2f}'
+        y = f'{m:.2f}' if pl[0] == 't' else f'{mh}-{th}-{m:.2f}'
+        return x, y
     vx, vy = float(cfg.get('vx', 55)) * k, float(cfg.get('vy', 42)) * k
-    op, sop = float(cfg.get('opacity', 0.28)), float(cfg.get('shadowOpacity', 0.35))
-    rx, ry = f'max(1,w-text_w-{2 * m:.2f})', f'max(1,h-text_h-{2 * m:.2f})'
+    rx, ry = f'max(1,{mw}-{tw}-{2 * m:.2f})', f'max(1,{mh}-{th}-{2 * m:.2f})'
     # triangle wave 0 -> R -> 0 :  R - abs(mod(u, 2R) - R)
-    x = f"{m:.2f}+{rx}-abs(mod({vx:.4f}*t+0.12*{rx},2*({rx}))-{rx})"
-    y = f"{m:.2f}+{ry}-abs(mod({vy:.4f}*t+0.33*{ry},2*({ry}))-{ry})"
+    return (f"{m:.2f}+{rx}-abs(mod({vx:.4f}*t+0.12*{rx},2*({rx}))-{rx})", f"{m:.2f}+{ry}-abs(mod({vy:.4f}*t+0.33*{ry},2*({ry}))-{ry})")
+
+
+def watermark_filter(cfg: dict, W: int, H: int, fontfile: str | None) -> str:
+    """White-label text watermark as ONE drawtext filter (no extra passes, NVENC-friendly).
+    Size = sizePct of the shorter side (default 2.5%), white@opacity (default 0.28) + black@0.35 1px shadow.
+    placement: 'ghost' (triangle-wave bounce) or a fixed corner. A payload without placement/style (older client) keeps the legacy top-left mark."""
+    ff = f'fontfile={fontfile}:' if fontfile else ''
+    if not cfg.get('placement') and cfg.get('style') != 'ghost':
+        return f'drawtext=textfile=wm.txt:{ff}x=w*0.04:y=h*0.035:fontsize=h*0.032:fontcolor=white@0.88:shadowcolor=black@0.6:shadowx=2:shadowy=2'
+    short = min(W, H)
+    size = max(8, round(short * float(cfg.get('sizePct', 2.5)) / 100))
+    op, sop = float(cfg.get('opacity', 0.28)), float(cfg.get('shadowOpacity', 0.35))
+    x, y = _wm_xy(cfg, W, H, 'w', 'h', 'text_w', 'text_h')
     return f"drawtext=textfile=wm.txt:{ff}fontsize={size}:fontcolor=white@{op}:shadowcolor=black@{sop}:shadowx=1:shadowy=1:x='{x}':y='{y}'"
+
+
+def logo_overlay(cfg: dict, W: int, H: int, idx: int, src: str, dst: str) -> str:
+    """filter_complex fragment: scales the custom PNG logo to ~sizePct*2.4 of the short side (alpha kept), applies opacity and overlays it
+    on [src] -> [dst] at the same placement rules as the text."""
+    short = min(W, H)
+    lh = max(12, round(short * float(cfg.get('sizePct', 2.5)) * 2.4 / 100))
+    op = max(0.05, min(1.0, float(cfg.get('opacity', 0.28)) + (0.0 if cfg.get('placement') else 0.6)))
+    x, y = _wm_xy(cfg, W, H, 'main_w', 'main_h', 'overlay_w', 'overlay_h')
+    return f"[{idx}:v]scale=-2:{lh},format=rgba,colorchannelmixer=aa={op}[lg];[{src}][lg]overlay=x='{x}':y='{y}':format=auto[{dst}]"
 
 
 def build_ass(subs, cap, W, H, family, callouts=None):
@@ -552,7 +572,10 @@ def render_job(jid: str):
         if subs or callouts:
             (wd / 'subs.ass').write_text(build_ass(subs, cap, W, H, family, callouts), encoding='utf-8')
         wmc = P.get('watermark') or {}
-        wm = (wmc.get('text', '') if wmc.get('enabled', True) else '').strip()          # OFF => nothing is drawn
+        mark = wmc.get('mark', 'text')                                                  # 'text' | 'logo' | 'both'
+        wm = (wmc.get('text', '') if wmc.get('enabled', True) and mark in ('text', 'both') else '').strip()          # OFF => nothing is drawn
+        wlogo = job['files'].get(wmc.get('logoFile') or 'wmlogo') if (wmc.get('enabled', True) and mark in ('logo', 'both')) else None
+        brand = str(wmc.get('brand') or '').strip()[:80]
         ff = find_font(user_font)
         if wm: (wd / 'wm.txt').write_text(wm, encoding='utf-8')
 
@@ -602,7 +625,12 @@ def render_job(jid: str):
                     cur = 'blend'; n_in += 1
                 frags, cur = MFX.filter_overlay_chain(cur, ranges, W, H)
                 fc += frags
-            fc.append(f'[{cur}]{",".join(vfs) if vfs else "null"}[v]')
+            if wlogo:
+                inputs += ['-i', str(wlogo)]
+                fc.append(f'[{cur}]{",".join(vfs) if vfs else "null"}[vt]')
+                fc.append(logo_overlay(wmc, W, H, n_in, 'vt', 'v')); n_in += 1
+            else:
+                fc.append(f'[{cur}]{",".join(vfs) if vfs else "null"}[v]')
             cmd = ['ffmpeg', '-y', '-v', 'error', *inputs]
             if labels:
                 fc.append(f'{"".join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,atrim=0:{total:.3f}[a]')
@@ -610,7 +638,10 @@ def render_job(jid: str):
             else:
                 cmd += ['-filter_complex', ';'.join(fc), '-map', '[v]', '-an']
             if safe and MFX: MFX.disable_nvenc()
-            cmd += [*venc(20, fps, fast=False), '-movflags', '+faststart', '-t', f'{total:.3f}', '-progress', 'pipe:1', '-nostats', str(final)]
+            # white-label: drop every tool/worker tag; only the locked brand name (if any) is written as artist/comment
+            meta = ['-map_metadata', '-1', '-fflags', '+bitexact', '-flags:v', '+bitexact', '-flags:a', '+bitexact']
+            if brand: meta += ['-metadata', f'artist={brand}', '-metadata', f'comment={brand}']
+            cmd += [*meta, *venc(20, fps, fast=False), '-movflags', '+faststart', '-t', f'{total:.3f}', '-progress', 'pipe:1', '-nostats', str(final)]
             return cmd
 
         final = OUT / f'{jid}.mp4'
@@ -676,16 +707,28 @@ def stop_own_pod() -> bool:
         return False
 
 
+def idle_stop_enabled() -> bool:
+    """ATOM_IDLE_STOP=0 disables auto-stop. The old IPS_IDLE_STOP is still honoured as a fallback."""
+    return os.environ.get('ATOM_IDLE_STOP', os.environ.get('IPS_IDLE_STOP', '1')) != '0'
+
+
+def _busy() -> bool:
+    """A queued or running render NEVER counts as idle, even when the phone is locked and nobody polls."""
+    return any(j.get('status') in ('QUEUED', 'RUNNING') for j in list(JOBS.values()))
+
+
 def _watchdog():
-    """Lightweight timer thread. Only active on a RunPod Pod (RUNPOD_POD_ID set) unless IPS_IDLE_STOP=0."""
-    if not os.environ.get('RUNPOD_POD_ID') or os.environ.get('IPS_IDLE_STOP', '1') == '0':
-        print('[watchdog] idle auto-stop disabled (not on a RunPod Pod, or IPS_IDLE_STOP=0)')
+    """Lightweight timer thread. Only active on a RunPod Pod (RUNPOD_POD_ID set) unless ATOM_IDLE_STOP=0.
+    Inside the Omni-Worker (ATOM_EMBEDDED=1) the single Omni watchdog does this job instead."""
+    if os.environ.get('ATOM_EMBEDDED') == '1': return
+    if not os.environ.get('RUNPOD_POD_ID') or not idle_stop_enabled():
+        print('[watchdog] idle auto-stop disabled (not on a RunPod Pod, or ATOM_IDLE_STOP=0)')
         return
     print(f'[watchdog] Pod stops itself after {IDLE_TIMEOUT_SECONDS}s without API requests')
     while True:
         time.sleep(10)
         idle = time.time() - last_activity()
-        if _INFLIGHT['n'] > 0 or idle < IDLE_TIMEOUT_SECONDS: continue       # a request (e.g. a long upload) is still in flight
+        if _INFLIGHT['n'] > 0 or _busy() or idle < IDLE_TIMEOUT_SECONDS: continue   # a request or a running job keeps the Pod alive
         print(f'[watchdog] idle for {int(idle)}s, stopping the Pod')
         if stop_own_pod(): return
         time.sleep(60)                                                        # could not stop: try again in a minute

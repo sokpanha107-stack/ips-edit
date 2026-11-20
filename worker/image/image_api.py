@@ -1,4 +1,4 @@
-"""IPS edit · Image Engine (batch reference-guided image generation).
+"""Atom Edit · Image Engine (batch reference-guided image generation).
 
 POST /api/generate-image            multipart: `signature` (the base/reference image) + `payload` JSON
                                     {"prompts": ["scene 1 ...", ...up to 100], "width": 768, "height": 1344, "scale": 0.6, "steps": 30, "seed": 123, "negative": "..."}
@@ -19,7 +19,7 @@ MODEL = os.environ.get('IPS_IMAGE_MODEL', 'klein')   # 'klein' = FLUX.2 klein 4B
 MODELS_DIR = os.environ.get('IPS_MODELS_DIR', '/content/drive/MyDrive/IPS_Models')
 KLEIN_ID = 'black-forest-labs/FLUX.2-klein-4B'
 KEEP = 'Keep exactly the same character (face, hair, skin tone, clothes) and the same illustration art style as the reference image. New scene: '
-MAX_PROMPTS = 100
+MAX_PROMPTS = int(os.environ.get('ATOM_MAX_SCENES', '2000'))   # was a fixed 100: batches are unlimited now (checkpointed + auto-resume)
 JOBS: dict = {}
 Q: 'queue.Queue[str]' = queue.Queue()
 _PIPE = {'pipe': None, 'error': None}
@@ -97,9 +97,12 @@ def run_job(jid: str):
             pipe = load_pipe()
             if MODEL == 'sdxl': pipe.set_ip_adapter_scale(float(P.get('scale', 0.6)))
         base_seed = int(P['seed']) if P.get('seed') not in (None, '') else int(time.time()) % 2**31
-        pad = 3 if len(prompts) > 99 else 2
+        pad = int(P.get('pad') or (3 if len(prompts) > 99 else 2))   # the app sends its pad so names match the signed upload slots
+        skip = {int(x) for x in (P.get('skip') or [])}    # scenes already saved before a crash (auto-resume)
         for i, prompt in enumerate(prompts):
             if job.get('cancel'): raise RuntimeError('cancelled')
+            if (i + 1) in skip:
+                job['done'] = i + 1; job['progress'] = round(100 * (i + 1) / len(prompts), 1); continue
             job['stage'] = f'Image {i + 1}/{len(prompts)}'
             if MOCK:
                 time.sleep(0.15); img = _mock_image(sig, prompt, w, h, i)
@@ -160,7 +163,7 @@ def register(app, public_url=lambda: ''):
     def status(jid: str):
         j = JOBS.get(jid)
         if not j: return JSONResponse({'ok': False, 'error': 'unknown job'}, status_code=404)
-        return {'ok': True, 'status': j['status'], 'progress': j['progress'], 'stage': j['stage'], 'done': j['done'], 'total': j['total'], 'error': j.get('error'),
+        return {'ok': True, 'status': j['status'], 'progress': j['progress'], 'stage': j['stage'], 'done': j['done'], 'total': j['total'], 'saved': j.get('saved', 0), 'error': j.get('error'),
                 'images': [{**im, 'url': f"{public_url()}{im['url']}"} for im in j['images']]}
 
     @app.post('/api/generate-image/cancel/{jid}')
