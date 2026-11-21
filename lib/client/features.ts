@@ -1,9 +1,9 @@
-/** Which app features are shown, and in what order. Stored in localStorage and shared by the Sidebar, Settings and Command Center. */
+/** Which app features are shown, and in what order. Stored in localStorage and shared by the Sidebar, Settings and Atom Monitor. */
 export type FeatureId = 'script' | 'prompts' | 'documents' | 'voices' | 'music' | 'music-engine' | 'voice' | 'video' | 'image' | 'history' | 'command';
 export interface FeatureCfg { id: FeatureId; on: boolean }
 
 export const FEATURE_LABEL: Record<FeatureId, string> = {
-  script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: 'Voice Library', music: 'Music Library', 'music-engine': 'Music Engine', voice: 'Voice Engine', video: 'Video Engine', image: 'Image Engine', history: 'History Project', command: 'Command Center',
+  script: 'Script Preparation', prompts: 'Prompt Library', documents: 'Document', voices: 'Voice Library', music: 'Music Library', 'music-engine': 'Music Engine', voice: 'Voice Engine', video: 'Video Engine', image: 'Image Engine', history: 'History Project', command: 'Atom Monitor',
 };
 export const FEATURE_STORE = 'ips-features';
 export const DEFAULT_FEATURES: FeatureCfg[] = (['script', 'prompts', 'documents', 'voices', 'music', 'voice', 'video', 'image', 'music-engine', 'history', 'command'] as FeatureId[]).map((id) => ({ id, on: id !== 'video' }))   // v2.4: the standalone Video Engine is hidden by default (Settings → Features switches it on);

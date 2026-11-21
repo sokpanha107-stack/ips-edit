@@ -82,7 +82,7 @@ async function fallbackSave(rec: MusicRec): Promise<void> {
 
 /** Polls an already-started job to the end (also used to resume after the phone was locked). Always releases the GPU lease. */
 /** The locked watermark brand (Timeline → Watermark → 🔒): the only name ever written into the MP3 tags. Empty when unlocked. */
-function lockedBrand(): string {
+export function lockedBrand(): string {
   try { const w = JSON.parse(localStorage.getItem('ips-tl-prefs') ?? '{}').wm; if (!w?.locked) return ''; return (w.mode === 'full' ? String(w.full ?? '') : [w.left, w.right].filter((x: string) => x && x.trim()).join(' | ')).trim().slice(0, 80); } catch { return ''; }
 }
 
@@ -151,7 +151,7 @@ export async function startSong(input: MusicJobInput, on: (s: StepState) => void
   } catch (e) {
     await podRelease('music').catch(() => undefined);
     const m = e instanceof Error ? e.message : 'Failed';
-    upd({ error: m === 'NO_ENDPOINT' ? 'Connect the Music Engine first (Command Center → Music Engine, or save a Pod ID).' : m, step: 0 });
+    upd({ error: m === 'NO_ENDPOINT' ? 'Connect the Music Engine first (Settings → API Key Vault → Atom GPU Engine).' : m, step: 0 });
   }
 }
 

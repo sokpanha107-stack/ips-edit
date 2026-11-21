@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Atom Edit Omni-Worker on ONE RunPod Pod (24 GB GPU: RTX 4090 / A5000). Image + Music + Timeline Render in one server, port 8000.
+# Atom Edit Omni-Worker on ONE RunPod Pod (RTX A6000 48 GB recommended; 24 GB works too). Image + Music + Voice Clone + Timeline Render in one server, port 8000.
 # Put this ONE line in the Pod's "Docker Command" (it runs again by itself on every restart):
 #   bash -c "[ -d /workspace/ips-edit ] && git -C /workspace/ips-edit pull -q || git clone -q https://github.com/sokpanha107-stack/ips-edit /workspace/ips-edit; ATOM_KEY=your-secret bash /workspace/ips-edit/worker/omni/start.sh"
 # Expose HTTP port 8000. URL = https://<pod-id>-8000.proxy.runpod.net . Use the SAME secret as the "Atom GPU Engine" API Key in the app.
@@ -14,7 +14,7 @@ command -v ffmpeg >/dev/null || (apt-get update -qq && apt-get install -y -qq ff
 V=/workspace/omni-venv
 [ -d "$V" ] || python3 -m venv --system-site-packages "$V"      # keeps the template's torch/CUDA; everything else stays on the volume
 . "$V/bin/activate"
-if [ ! -f "$V/.ready" ]; then
+if [ ! -f "$V/.ready-b" ]; then
   pip install -q -r requirements.txt
   [ -d "$ACESTEP_DIR" ] || git clone -q --depth 1 https://github.com/ace-step/ACE-Step "$ACESTEP_DIR"
   [ -d "$SEEDVC_DIR" ] || git clone -q --depth 1 https://github.com/Plachtaa/seed-vc "$SEEDVC_DIR"
@@ -24,10 +24,10 @@ if [ ! -f "$V/.ready" ]; then
   pip install -q -r "$RVC_DIR/requirements.txt" || true
   python - <<'PY' || true
 from huggingface_hub import snapshot_download
-for m in ('depth-anything/Depth-Anything-V2-Small-hf', 'black-forest-labs/FLUX.2-klein-4B'):
+for m in ('depth-anything/Depth-Anything-V2-Small-hf', 'black-forest-labs/FLUX.2-klein-4B', 'facebook/mms-tts-khm', 'facebook/mms-tts-eng'):
     try: snapshot_download(m)
     except Exception as e: print('pre-download skipped:', m, str(e)[:120])
 PY
-  touch "$V/.ready"
+  touch "$V/.ready-b"
 fi
 exec uvicorn omni_api:app --host 0.0.0.0 --port 8000

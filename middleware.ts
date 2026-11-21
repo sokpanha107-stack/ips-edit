@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  * Public: /login, /auth/*, provider webhooks (they carry their own secret token), /api/health.
  * Every API route ALSO re-checks the user itself (defense in depth), and the database enforces RLS.
  */
-const PUBLIC = [/^\/login$/, /^\/auth\//, /^\/api\/webhooks\//, /^\/api\/health$/, /^\/api\/(music|image|render)\/complete$/];   // music/complete: the GPU worker calls it with a one-time HMAC token; the route verifies it (or a session) itself
+const PUBLIC = [/^\/login$/, /^\/auth\//, /^\/api\/webhooks\//, /^\/api\/health$/, /^\/api\/(music|image|render|voice)\/complete$/];   // music/complete: the GPU worker calls it with a one-time HMAC token; the route verifies it (or a session) itself
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;

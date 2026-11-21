@@ -5,7 +5,7 @@ import { readMusicToken } from './musicToken';
 import { adminClient } from '@/lib/supabase/admin';
 import { notifyAll } from './notify';
 
-export type Kind = 'image' | 'music' | 'video';
+export type Kind = 'image' | 'music' | 'video' | 'voice';
 export const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 
 const body = z.object({
@@ -14,8 +14,8 @@ const body = z.object({
   files: z.array(z.object({ path: z.string().max(400), name: z.string().max(160), size: z.number().optional() })).max(50).optional(),
   step: z.number().optional(), total: z.number().optional(), error: z.string().max(500).optional(),
 });
-const MIME: Record<Kind, string> = { image: 'image/png', music: 'audio/mpeg', video: 'video/mp4' };
-const SOURCE: Record<Kind, string> = { image: 'image', music: 'voice', video: 'video' };
+const MIME: Record<Kind, string> = { image: 'image/png', music: 'audio/mpeg', video: 'video/mp4', voice: 'audio/mpeg' };
+const SOURCE: Record<Kind, string> = { image: 'image', music: 'voice', video: 'video', voice: 'voice' };
 
 async function register(db: SupabaseClient, uid: string, kind: Kind, parent: string | null, f: { path: string; name: string; size?: number }) {
   const have = await db.from('documents').select('id').eq('user_id', uid).eq('storage_path', f.path).maybeSingle();
@@ -47,10 +47,11 @@ export async function handleComplete(kind: Kind, req: Request) {
     if (claims.j) await admin.from('gpu_jobs').update({ status: event === 'failed' ? 'failed' : event === 'done' ? 'done' : 'running', step: step ?? null, total: total ?? null, detail: error ?? null, updated_at: new Date().toISOString() }).eq('id', claims.j).eq('user_id', claims.u);
     if (event === 'done') {
       const msg = kind === 'image' ? `✅ Atom Edit: រូបភាព "${title}" (${total ?? files.length}/${total ?? files.length} Scenes) ចូលដេកក្នុង Document ហើយ! Pod បិទអូតូ។`
+        : kind === 'voice' ? `✅ Atom Edit: សំឡេង "${title}" (${total ?? files.length}/${total ?? files.length} Scenes) ចូលដេកក្នុង Document ហើយ! Pod បិទអូតូ។`
         : kind === 'music' ? `✅ Atom Edit: ចម្រៀង "${title}" ចូលដេកក្នុង Document ហើយ! Pod បិទអូតូ។` : `✅ Atom Edit: វីដេអូ "${title}" Render រួចរាល់ក្នុង Document ហើយ! Pod បិទអូតូ។`;
       await notifyAll(admin, claims.u, 'Atom Edit', msg, `job-${kind}`);
     } else if (event === 'failed') {
-      await notifyAll(admin, claims.u, 'Atom Edit', `⚠️ Atom Edit: Job "${title}" ឈប់/មានបញ្ហាត្រង់ ${kind === 'image' ? 'Scene' : 'Step'} ${step ?? '?'} — ចុចពិនិត្យ។ ${error ?? ''}`.trim(), `job-${kind}-fail`);
+      await notifyAll(admin, claims.u, 'Atom Edit', `⚠️ Atom Edit: Job "${title}" ឈប់/មានបញ្ហាត្រង់ ${kind === 'image' || kind === 'voice' ? 'Scene' : 'Step'} ${step ?? '?'} — ចុចពិនិត្យ។ ${error ?? ''}`.trim(), `job-${kind}-fail`);
     }
     return NextResponse.json({ ok: true }, { headers: CORS });
   } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500, headers: CORS }); }

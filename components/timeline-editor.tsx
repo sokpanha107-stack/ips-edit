@@ -289,7 +289,7 @@ export const TimelineEditor = forwardRef<TimelineHandle, { scripts: { label: str
       void podRelease('render'); setWake('');
       const m = e instanceof Error ? e.message : 'Export failed';
       if (m === 'cancelled') { setPhase('idle'); return; }
-      setPhase('error'); setErr(m === 'NO_ENDPOINT' ? 'Connect your GPU / render server first (menu → Command Center → Video Engine).' : m === 'RUNPOD' ? 'Timeline export needs the RunPod Pod render server (worker/render/start.sh, port 8000), not a Serverless endpoint.' : m);
+      setPhase('error'); setErr(m === 'NO_ENDPOINT' ? 'Connect your GPU / render server first (Settings → API Key Vault → Atom GPU Engine).' : m === 'RUNPOD' ? 'Timeline export needs the RunPod Pod render server (worker/render/start.sh, port 8000), not a Serverless endpoint.' : m);
     }
   };
   const doCancel = async () => { cancelWake.current = true; const j = jobRef.current; jobRef.current = null; if (j) await cancelRender(j); void podRelease('render'); setWake(''); setPhase('idle'); setRs(null); };

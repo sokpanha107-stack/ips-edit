@@ -1,6 +1,7 @@
-"""Atom Edit · Omni-Worker: ONE FastAPI server on ONE RunPod GPU (port 8000) for Image, Music and Timeline Render.
+"""Atom Edit · Omni-Worker: ONE FastAPI server on ONE RunPod GPU (port 8000; tuned for the RTX A6000 48 GB, also fine on 24 GB) for Image, Music, Voice Clone and Timeline Render.
 
   /image/*   Image Engine   (POST /image/api/generate-image, GET /image/api/generate-image/status/{id}, ...)
+  /voice/*   Voice Clone   (POST /voice/api/clone: Khmer/English speech in the Signature Voice: TTS -> Seed-VC)
   /music/*   Music Engine   (POST /music/render, GET /music/status/{id}, ...)
   /render/*  Timeline Render(POST /render/render, GET /render/render/status/{id}, ...)
   /status    ONE live view for the Command Center (GPU %, VRAM, disk, active model, active job)      /health  /ping
@@ -14,7 +15,7 @@ What makes it safe for a single 24 GB GPU and a locked phone:
   * Fire-and-forget: a job that carries a `finalize` spec (signed upload URLs + one-time HMAC token from /api/<engine>/prepare) is uploaded by THIS
     process (3 tries, exponential backoff, deterministic names + upsert) and reported to /api/<engine>/complete. Temp files are deleted right after
     the upload is confirmed (and after a failure). No SUPABASE key is ever on this machine.
-  * Hard wall-clock caps per job (ATOM_TIMEOUT_MUSIC_MIN=12, ATOM_TIMEOUT_VIDEO_MIN=25, ATOM_TIMEOUT_IMAGE_MIN=45): cancel -> mark failed with the exact
+  * Hard wall-clock caps per job (ATOM_TIMEOUT_VOICE_MIN=30, ATOM_TIMEOUT_MUSIC_MIN=12, ATOM_TIMEOUT_VIDEO_MIN=25, ATOM_TIMEOUT_IMAGE_MIN=45): cancel -> mark failed with the exact
     scene/step -> alert -> stop the Pod. Running/queued jobs and pending uploads NEVER count as idle.
   * Self-healing: job specs are saved on the volume; after a restart interrupted jobs are re-queued (images skip scenes already uploaded).
 """
@@ -26,20 +27,21 @@ ROOT = HERE.parent
 os.environ.setdefault('ATOM_EMBEDDED', '1')                       # the engines' own watchdogs stand down; the Omni watchdog below is the only one
 STATE = Path(os.environ.get('ATOM_STATE_DIR', '/workspace/.atom')); STATE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault('IPS_IMAGE_DIR', str(STATE / 'image')); os.environ.setdefault('IPS_RENDER_DIR', str(STATE / 'render'))
+os.environ.setdefault('IPS_VOICE_DIR', str(STATE / 'voice'))
 os.environ.setdefault('MUSIC_TMP', str(STATE / 'music')); os.environ['MUSIC_KEY'] = ''   # auth is done once, here
 os.environ.setdefault('IPS_CACHE_DIR', '/workspace/.cache')
 os.environ.setdefault('HF_HOME', '/workspace/.cache/hf'); os.environ.setdefault('TORCH_HOME', '/workspace/.cache/torch')
-for d in ('music', 'image', 'render'): sys.path.insert(0, str(ROOT / d))
+for d in ('music', 'image', 'render', 'voice'): sys.path.insert(0, str(ROOT / d))
 
 from fastapi import FastAPI, Request                                       # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware                         # noqa: E402
 from fastapi.responses import JSONResponse                                 # noqa: E402
-import image_api, render_api, music_api                                    # noqa: E402  (music_api pulls its own idle + pipeline)
+import image_api, render_api, music_api, voice_api                                    # noqa: E402  (music_api pulls its own idle + pipeline)
 
 KEY = os.environ.get('ATOM_KEY') or os.environ.get('MUSIC_KEY_OLD', '')
 MIN_FREE_GB = float(os.environ.get('ATOM_MIN_FREE_GB', '10'))
 LIMIT_SEC = {'image': float(os.environ.get('ATOM_TIMEOUT_IMAGE_MIN', '45')) * 60, 'music': float(os.environ.get('ATOM_TIMEOUT_MUSIC_MIN', '12')) * 60,
-             'video': float(os.environ.get('ATOM_TIMEOUT_VIDEO_MIN', '25')) * 60}
+             'video': float(os.environ.get('ATOM_TIMEOUT_VIDEO_MIN', '25')) * 60, 'voice': float(os.environ.get('ATOM_TIMEOUT_VOICE_MIN', '30')) * 60}
 IDLE_SEC = 180
 IDLE_ON = os.environ.get('ATOM_IDLE_STOP', os.environ.get('IPS_IDLE_STOP', '1')) != '0'
 WORKSPACE = '/workspace' if os.path.isdir('/workspace') else '/'
@@ -71,6 +73,7 @@ def unload_all_except(kind: str):
     """VRAM swapper: drop every other engine's resident model, then clear the CUDA cache."""
     if kind != 'image' and image_api._PIPE.get('pipe') is not None:
         image_api._PIPE['pipe'] = None; log('unloaded image model')
+    if kind != 'voice': voice_api.unload()
     if kind != 'video':
         try:
             import motion_fx
@@ -82,9 +85,9 @@ def unload_all_except(kind: str):
 
 def sweep_stale(max_age_h: float = 1.0):
     """Deletes temp folders of finished/unknown jobs older than max_age_h (never a running job)."""
-    now = time.time(); live = {j['id'] for j in list(image_api.JOBS.values()) + list(render_api.JOBS.values()) if j.get('status') in ('QUEUED', 'RUNNING') and 'id' in j}
+    now = time.time(); live = {j['id'] for j in list(image_api.JOBS.values()) + list(voice_api.JOBS.values()) + list(render_api.JOBS.values()) if j.get('status') in ('QUEUED', 'RUNNING') and 'id' in j}
     live |= {k for k, j in music_api.JOBS.items() if j.get('status') in ('QUEUED', 'RUNNING')}
-    for base in (image_api.WORK, image_api.WORK / 'out', render_api.WORK, render_api.OUT, music_api.ROOT):
+    for base in (image_api.WORK, image_api.WORK / 'out', voice_api.WORK, voice_api.WORK / 'out', render_api.WORK, render_api.OUT, music_api.ROOT):
         if not base.exists(): continue
         for p in base.iterdir():
             try:
@@ -125,6 +128,7 @@ def _guard(mod, fname, kind, jobs):
 
 _guard(image_api, 'run_job', 'image', image_api.JOBS)
 _guard(render_api, 'render_job', 'video', render_api.JOBS)
+_guard(voice_api, 'run_job', 'voice', voice_api.JOBS)
 
 # ------------------------------------------------------------------ upload to Supabase (signed URL) + completion callback
 def put_file(url: str, path: Path, mime: str) -> bool:
@@ -166,7 +170,7 @@ def _stop_pod() -> bool:
 def busy() -> bool:
     """Queued/running jobs and uploads that are not confirmed yet. A locked phone never makes the Pod idle."""
     if INFLIGHT['n'] > 0: return True
-    if any(j.get('status') in ('QUEUED', 'RUNNING') for j in list(image_api.JOBS.values()) + list(render_api.JOBS.values()) + list(music_api.JOBS.values())): return True
+    if any(j.get('status') in ('QUEUED', 'RUNNING') for j in list(image_api.JOBS.values()) + list(voice_api.JOBS.values()) + list(render_api.JOBS.values()) + list(music_api.JOBS.values())): return True
     return any(not f.get('closed') for f in FIN.values())
 
 
@@ -211,29 +215,30 @@ def _timeout_check(kind: str, jid: str, job: dict, fin: dict, lim_key: str):
 
 
 def _where(kind: str, job: dict) -> str:
-    if kind == 'image': return str(min(int(job.get('total') or 0), int(job.get('done') or 0) + 1))
+    if kind in ('image', 'voice'): return str(min(int(job.get('total') or 0), int(job.get('done') or 0) + 1))
     if kind == 'music': return str(job.get('step') or '?')
     return str(job.get('stage') or '?')
 
 
-def _watch_image():
-    for jid, job in list(image_api.JOBS.items()):
+def _watch_scenes(kind: str, mod, mime: str, lim: str):
+    """Image + Voice: scene files are uploaded one by one to their signed slots (3 tries), confirmed to /api/<kind>/complete, then deleted."""
+    for jid, job in list(mod.JOBS.items()):
         fz = (job.get('payload') or {}).get('finalize')
         if not fz: continue
-        k = f'image:{jid}'
+        k = f'{kind}:{jid}'
         off = int(fz.get('offset') or 0)                                       # slot numbers are global (scene-001 ...), image indexes are relative to this job
         fin = FIN.setdefault(k, {'t0': job.get('created') or time.time(), 'cb': fz['callback'], 'token': fz['token'], 'sent': {int(x) + off for x in (job['payload'].get('skip') or [])}, 'tries': 0})
         if fin.get('closed'): continue
         slots = {int(s['index']): s for s in fz['slots']}
-        _save_resume('image', jid, {'jid': jid, 'payload': job['payload'], 'sig': str(job['sig']), 'sent': sorted(fin['sent']), 'created': fin['t0']})
-        if _timeout_check('image', jid, job, fin, 'image'): pass
-        out = image_api.WORK / 'out' / jid
+        _save_resume(kind, jid, {'jid': jid, 'payload': job['payload'], 'sig': str(job['sig']), 'sent': sorted(fin['sent']), 'created': fin['t0']})
+        if _timeout_check(kind, jid, job, fin, lim): pass
+        out = mod.WORK / 'out' / jid
         new = []
         for im in list(job['images']):
             i = int(im['index']) + off
             if i in fin['sent'] or i not in slots: continue
             p = out / im['name']
-            if p.exists() and put_file(slots[i]['uploadUrl'], p, 'image/png'):
+            if p.exists() and put_file(slots[i]['uploadUrl'], p, mime):
                 fin['sent'].add(i); new.append({'path': slots[i]['path'], 'name': slots[i]['name']}); p.unlink(missing_ok=True)   # temp frame deleted right after confirmed upload
             else: fin['tries'] += 1
         job['saved'] = len([i for i in fin['sent'] if off < i <= off + int(job.get('total') or 0)])   # uploaded + confirmed (the app reads this)
@@ -244,15 +249,15 @@ def _watch_image():
         if st == 'DONE' and job['saved'] >= total:
             fin['closed'] = True
             callback(fin['cb'], fz['token'], event='done', files=[], step=off + total, total=off + total)
-            shutil.rmtree(out, ignore_errors=True); shutil.rmtree(image_api.WORK / jid, ignore_errors=True); _drop_resume('image', jid)
+            shutil.rmtree(out, ignore_errors=True); shutil.rmtree(mod.WORK / jid, ignore_errors=True); _drop_resume(kind, jid)
             stop_when_empty()
         elif st in ('FAILED', 'CANCELLED') or fin['tries'] >= 12:
             if st == 'CANCELLED' and not fin.get('timeout_at'):
-                fin['closed'] = True; _drop_resume('image', jid); stop_when_empty()    # the user cancelled: no alert
+                fin['closed'] = True; _drop_resume(kind, jid); stop_when_empty()    # the user cancelled: no alert
             else:
-                _fail('image', jid, fin, _where('image', job), job.get('error') or ('time limit' if fin.get('timeout_at') else 'upload failed'))
+                _fail(kind, jid, fin, _where(kind, job), job.get('error') or ('time limit' if fin.get('timeout_at') else 'upload failed'))
                 if IDLE_ON: stop_when_empty()
-            shutil.rmtree(out, ignore_errors=True); shutil.rmtree(image_api.WORK / jid, ignore_errors=True)
+            shutil.rmtree(out, ignore_errors=True); shutil.rmtree(mod.WORK / jid, ignore_errors=True)
 
 
 def _watch_render():
@@ -310,9 +315,9 @@ def _watch_music():
 def _watcher():
     while True:
         time.sleep(2)
-        for fn in (_watch_image, _watch_render, _watch_music):
+        for fn in (lambda: _watch_scenes('image', image_api, 'image/png', 'image'), lambda: _watch_scenes('voice', voice_api, 'audio/mpeg', 'voice'), _watch_render, _watch_music):
             try: fn()
-            except Exception as e: log('watcher', fn.__name__, str(e)[:200])  # noqa: BLE001
+            except Exception as e: log('watcher', str(e)[:200])  # noqa: BLE001
 
 
 # ------------------------------------------------------------------ self-healing: re-queue what a crash/restart interrupted
@@ -322,12 +327,14 @@ def resume_all():
         try:
             r = json.loads(f.read_text()); kind = f.name.split('-', 1)[0]; age = time.time() - float(r.get('created') or 0)
             fz = (r.get('payload') or {}).get('finalize') if kind != 'music' else {'callback': (r.get('up') or {}).get('cb'), 'token': (r.get('up') or {}).get('token')}
-            if age > LIMIT_SEC['video' if kind == 'video' else kind] * 1.5: f.unlink(missing_ok=True); continue    # too old: the token is dead too
-            if kind == 'image' and Path(r['sig']).exists():
+            if age > LIMIT_SEC[kind] * 1.5: f.unlink(missing_ok=True); continue    # too old: the token is dead too
+            if kind in ('image', 'voice') and Path(r['sig']).exists():
+                mod = image_api if kind == 'image' else voice_api
                 P = r['payload']; off = int((P.get('finalize') or {}).get('offset') or 0); P['skip'] = [g - off for g in r.get('sent', []) if g - off >= 1]
-                image_api.JOBS[r['jid']] = {'id': r['jid'], 'status': 'QUEUED', 'progress': 0.0, 'stage': 'Resumed', 'done': 0, 'total': len(P['prompts']), 'images': [], 'payload': P,
-                                            'sig': Path(r['sig']), 'created': float(r['created'])}
-                image_api.Q.put(r['jid']); n += 1
+                cnt = len(P['prompts'] if kind == 'image' else P['scenes'])
+                mod.JOBS[r['jid']] = {'id': r['jid'], 'status': 'QUEUED', 'progress': 0.0, 'stage': 'Resumed', 'done': 0, 'total': cnt, 'images': [], 'payload': P,
+                                      'sig': Path(r['sig']), 'created': float(r['created']), **({'durations': [0.0] * cnt, 'tts': None} if kind == 'voice' else {})}
+                mod.Q.put(r['jid']); n += 1
             elif kind == 'video' and all(Path(v).exists() for v in r.get('files', {}).values()):
                 render_api.JOBS[r['jid']] = {'id': r['jid'], 'status': 'QUEUED', 'progress': 0.0, 'stage': 'Resumed', 'dir': Path(r['dir']), 'files': {a: Path(b) for a, b in r['files'].items()},
                                              'payload': r['payload'], 'created': float(r['created'])}
@@ -399,31 +406,40 @@ def _gpu():
     return gpu, total, used, util
 
 
+def _jobs_view() -> list[dict]:
+    """Active first, then the most recent finished ones: the queue list shown in Atom Monitor."""
+    rows = []
+    for kind, mod in (('image', image_api), ('voice', voice_api)):
+        for j in mod.JOBS.values():
+            rows.append({'kind': kind, 'id': j['id'], 'status': j['status'], 'done': j.get('done'), 'total': j.get('total'), 'percent': j.get('progress'), 'stage': j.get('stage'), 't': j.get('created', 0)})
+    for j in render_api.JOBS.values(): rows.append({'kind': 'render', 'id': j['id'], 'status': j['status'], 'done': None, 'total': None, 'percent': j.get('progress'), 'stage': j.get('stage'), 't': j.get('created', 0)})
+    for jid, j in music_api.JOBS.items(): rows.append({'kind': 'music', 'id': jid, 'status': j['status'], 'done': j.get('step'), 'total': 7, 'percent': j.get('percent'), 'stage': None, 't': (FIN.get(f'music:{jid}') or {}).get('t0', 0)})
+    live = [r for r in rows if r['status'] in ('QUEUED', 'RUNNING')]; done = sorted([r for r in rows if r['status'] not in ('QUEUED', 'RUNNING')], key=lambda r: -float(r['t'] or 0))
+    return (sorted(live, key=lambda r: (r['status'] != 'RUNNING', float(r['t'] or 0))) + done)[:8]
+
+
 @app.get('/status')
 def status():
-    """ONE payload for the single GPU Performance Monitor: what is running, which model, progress, GPU %, VRAM, disk."""
+    """ONE payload for Atom Monitor: what is running, which model, progress, GPU %, VRAM, /workspace disk, idle countdown, job queue."""
     gpu, total, used, util = _gpu()
     d = shutil.disk_usage(WORKSPACE)
-    img = [j for j in image_api.JOBS.values() if j.get('status') in ('QUEUED', 'RUNNING')]
-    vid = [j for j in render_api.JOBS.values() if j.get('status') in ('QUEUED', 'RUNNING')]
-    mus = [j for j in music_api.JOBS.values() if j.get('status') in ('QUEUED', 'RUNNING')]
-    cur, kind, model, step, tot, pct, title = None, 'idle', None, None, None, None, None
-    run = lambda L: next((j for j in L if j.get('status') == 'RUNNING'), L[0] if L else None)   # noqa: E731
-    if run(img) or run(mus) or run(vid):
-        if run(img) and run(img).get('status') == 'RUNNING': cur, kind = run(img), 'image'
-        elif run(mus) and run(mus).get('status') == 'RUNNING': cur, kind = run(mus), 'music'
-        elif run(vid) and run(vid).get('status') == 'RUNNING': cur, kind = run(vid), 'render'
-        else: cur, kind = (run(img) or run(mus) or run(vid)), ('image' if img else 'music' if mus else 'render')
-    if kind == 'image' and cur:
-        model = ('FLUX.2 klein 4B' if image_api.MODEL == 'klein' else 'SDXL + IP-Adapter') + (' (mock)' if image_api.MOCK else ''); step, tot, pct = cur.get('done'), cur.get('total'), cur.get('progress')
-    elif kind == 'music' and cur:
-        s = int(cur.get('step') or 2); model = {2: 'ACE-Step', 3: 'ACE-Step', 4: 'Demucs', 5: 'Seed-VC / RVC', 6: 'FFmpeg Master', 7: 'Upload'}.get(s, 'Music'); step, tot, pct = s, 7, cur.get('percent')
-    elif kind == 'render' and cur:
-        model = 'Depth-Anything / NVENC'; pct = cur.get('progress'); title = cur.get('stage')
+    jobs = _jobs_view()
+    live = [r for r in jobs if r['status'] in ('QUEUED', 'RUNNING')]
+    cur = next((r for r in live if r['status'] == 'RUNNING'), live[0] if live else None)
+    kind, model, step, tot, pct, title = 'idle', None, None, None, None, None
+    if cur:
+        kind = 'render' if cur['kind'] == 'render' else cur['kind']; pct = cur['percent']; title = cur['stage']
+        if kind == 'image': model = ('FLUX.2 klein 4B' if image_api.MODEL == 'klein' else 'SDXL + IP-Adapter') + (' (mock)' if image_api.MOCK else ''); step, tot = cur['done'], cur['total']
+        elif kind == 'voice': model = 'Seed-VC' if 'Signature' in str(cur['stage']) else 'MMS-TTS / edge-tts'; step, tot = cur['done'], cur['total']
+        elif kind == 'music':
+            s = int(cur['done'] or 2); model = {2: 'ACE-Step', 3: 'ACE-Step', 4: 'Demucs', 5: 'Seed-VC / RVC', 6: 'FFmpeg Master', 7: 'Upload'}.get(s, 'Music'); step, tot = s, 7
+        else: model = 'Depth-Anything / NVENC'
+    idle_in = None if (busy() or not IDLE_ON or not os.environ.get('RUNPOD_POD_ID')) else max(0, int(IDLE_SEC - (time.time() - LAST['t'])))
+    q = {k: sum(1 for r in live if r['kind'] == k) for k in ('image', 'music', 'render', 'voice')}
     return {'ok': True, 'state': kind, 'model': model, 'loaded': ACTIVE['kind'], 'step': step, 'total': tot, 'percent': pct, 'title': title,
             'gpu': gpu, 'gpu_util': util, 'vram_total_gb': None if total is None else round(total, 1), 'vram_used_gb': None if used is None else round(used, 1),
             'disk_total_gb': round(d.total / 1e9, 1), 'disk_used_gb': round(d.used / 1e9, 1), 'disk_free_gb': round(d.free / 1e9, 1),
-            'active_tasks': len(img) + len(vid) + len(mus), 'queued': {'image': len(img), 'music': len(mus), 'render': len(vid)}, 'uptime': int(time.time() - STARTED)}
+            'active_tasks': len(live), 'queued': q, 'uptime': int(time.time() - STARTED), 'idle_in_sec': idle_in, 'auto_stop': IDLE_ON, 'jobs': jobs}
 
 
 @app.get('/hardware')
@@ -433,11 +449,11 @@ def hardware():                                                                 
             'model': s['model'] or 'Atom Omni (Image · Music · Render)', 'active_tasks': s['active_tasks']}
 
 
-_si, _sr = FastAPI(), FastAPI()
-image_api.register(_si); render_api.register(_sr)
-app.mount('/image', _si); app.mount('/render', _sr); app.mount('/music', music_api.app)
+_si, _sr, _sv = FastAPI(), FastAPI(), FastAPI()
+image_api.register(_si); render_api.register(_sr); voice_api.register(_sv)
+app.mount('/image', _si); app.mount('/render', _sr); app.mount('/voice', _sv); app.mount('/music', music_api.app)
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])   # added last = outermost: answers browser preflights
 
 for _t in (_watcher, _idle_loop): threading.Thread(target=_t, daemon=True).start()
 threading.Thread(target=resume_all, daemon=True).start()
-log(f'Atom Omni-Worker ready · caps image {LIMIT_SEC["image"] / 60:.0f} / music {LIMIT_SEC["music"] / 60:.0f} / video {LIMIT_SEC["video"] / 60:.0f} min · idle stop {"ON" if IDLE_ON else "OFF"}')
+log(f'Atom Omni-Worker ready · caps voice {LIMIT_SEC["voice"] / 60:.0f} / image {LIMIT_SEC["image"] / 60:.0f} / music {LIMIT_SEC["music"] / 60:.0f} / video {LIMIT_SEC["video"] / 60:.0f} min · idle stop {"ON" if IDLE_ON else "OFF"}')

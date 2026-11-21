@@ -20,13 +20,13 @@ export function WorkflowDiagram() {
   return <svg viewBox="0 0 360 560" width="100%" role="img" aria-label="Atom Edit workflow" style={{ display: 'block', background: C.bg, borderRadius: 16 }}>
     <Box x={90} y={14} w={180} h={50} title="Script Preparation" sub="AI assist · breath · scenes · hand-off" />
     <Arrow x1={180} y1={64} x2={180} y2={96} />
-    <Box x={14} y={96} w={160} h={60} title="Voice Engine" sub="KH | EN · 1 audio / scene" accent />
+    <Box x={14} y={96} w={160} h={60} title="Voice Engine" sub="KH | EN · Signature Voice clone" accent />
     <Box x={186} y={96} w={160} h={60} title="Image Engine" sub="1 image / scene" accent />
     <Arrow x1={94} y1={156} x2={150} y2={196} />
     <Arrow x1={266} y1={156} x2={210} y2={196} />
     <Box x={50} y={196} w={260} h={64} title="Batch Processing · Unlimited Scenes" sub="Autonomous Resume · auto-saved" accent />
     <Arrow x1={180} y1={260} x2={180} y2={298} />
-    <Box x={90} y={298} w={180} h={50} title="Timeline Editor" sub="Master Script · 2.5D · FX · SFX" />
+    <Box x={90} y={298} w={180} h={50} title="Timeline Editor" sub="reads cloned audio from Document" />
     <Arrow x1={180} y1={348} x2={180} y2={386} />
     <Box x={70} y={386} w={220} h={50} title="RunPod Omni-Worker · Render" sub="1 GPU · NVENC · fire-and-forget" />
     <Arrow x1={180} y1={436} x2={180} y2={474} />
@@ -48,7 +48,7 @@ export function ArchitectureDiagram() {
     <Box x={8} y={196} w={170} h={110} title="Supabase" sub="Auth · RLS database" />
     <text x={93} y={284} textAnchor="middle" fontFamily={font} fontSize={10.5} fill={C.soft}>Storage bucket “documents”</text>
     <text x={93} y={299} textAnchor="middle" fontFamily={font} fontSize={10.5} fill={C.soft}>owner-only policies</text>
-    <Box x={190} y={196} w={162} h={110} title="API Key Vault" sub="AES-256-GCM encrypted" />
+    <Box x={190} y={196} w={162} h={110} title="API Key Vault" sub="1 GPU card · AES-256-GCM" />
     <text x={271} y={284} textAnchor="middle" fontFamily={font} fontSize={10.5} fill={C.soft}>key never returned</text>
     <text x={271} y={299} textAnchor="middle" fontFamily={font} fontSize={10.5} fill={C.soft}>to the browser</text>
     <Arrow x1={110} y1={154} x2={110} y2={196} />
@@ -58,7 +58,7 @@ export function ArchitectureDiagram() {
     <Box x={190} y={346} w={162} h={56} title="External engines" sub="called by the server" accent />
     <Arrow x1={271} y1={402} x2={271} y2={430} />
     <Box x={8} y={430} w={110} h={60} title="Gemini" sub="AI Assistant" />
-    <Box x={125} y={430} w={110} h={60} title="RunPod Omni" sub="Image·Music·Render" />
-    <Box x={242} y={430} w={110} h={60} title="Voice · Alerts" sub="gTTS · Push · Telegram" />
+    <Box x={125} y={430} w={110} h={60} title="RunPod A6000" sub="Image·Music·Voice·Render" />
+    <Box x={242} y={430} w={110} h={60} title="Alerts" sub="Push · Telegram" />
   </svg>;
 }

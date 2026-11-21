@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Cpu, Eye, EyeOff, Gauge, Mic2, Plug, Film, X } from 'lucide-react';
-import { getPod, setPod, podCall, type PodStatus } from '@/lib/client/pod';
-import { ensureGpu, omniStatus, clearGpu, type OmniStatus } from '@/lib/client/gpu';
+import { Check, Cpu, Eye, EyeOff, Gauge, Plug, Film, X } from 'lucide-react';
+import { getPod, podCall, type PodStatus } from '@/lib/client/pod';
+import { ensureGpu, omniStatus, type OmniStatus } from '@/lib/client/gpu';
 import { api, getEngineEndpoint, setEngineEndpoint, type EngineKind, type ConnectResult, type HardwareInfo } from '@/lib/client/api';
 
 interface Labels { commandCenter: string; close: string; done: string; performance: string; vram: string; storage: string; activeTasks: string }
@@ -133,91 +133,77 @@ function EnginePanel({ kind, open, t, c }: { kind: EngineKind; open: boolean; t:
   </>;
 }
 
-const badge = (kh: boolean, s: OmniStatus | null, podOff: boolean) => {
-  if (!s) return podOff ? '○ Not connected' : '○ Not connected';
+const KIND: Record<string, { en: string; kh: string }> = {
+  image: { en: 'Image Engine', kh: 'Image Engine' }, music: { en: 'Music Engine', kh: 'Music Engine' },
+  render: { en: 'Timeline Render', kh: 'Timeline Render' }, voice: { en: 'Voice Clone', kh: 'Voice Clone' },
+};
+const badge = (kh: boolean, s: OmniStatus | null) => {
+  if (!s) return kh ? '○ Pod Offline' : '○ Pod Offline';
   if (s.state === 'image') return kh ? '● កំពុងផលិតរូបភាព (Image Engine)' : '● Generating images (Image Engine)';
   if (s.state === 'music') return kh ? '● កំពុងផលិតបទចម្រៀង (Music Engine)' : '● Producing the song (Music Engine)';
+  if (s.state === 'voice') return kh ? '● កំពុងផលិតសំឡេង (Voice Clone)' : '● Cloning voice (Voice Clone)';
   if (s.state === 'render') return kh ? '● កំពុង Render វីដេអូ (Timeline Render)' : '● Rendering video (Timeline Render)';
-  return kh ? '○ រួចរាល់ / Standby' : '○ Ready / Standby';
+  return kh ? '● Pod Online · រង់ចាំការងារ' : '● Pod Online · Standby';
 };
+const mmss = (n: number) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
 
-/** ONE connection + ONE monitor for the whole GPU: Image, Music and Timeline Render all run on this single RunPod Omni-Worker. */
-function AtomGpuPanel({ language, t }: { language: 'en' | 'kh'; t: Labels }) {
+/** Atom Monitor: LIVE TELEMETRY ONLY. All connection fields live in Settings → API Key Vault → Atom GPU Engine. */
+function AtomMonitorPanel({ language, t }: { language: 'en' | 'kh'; t: Labels }) {
   const kh = language === 'kh';
-  const [podId, setPodId] = useState('');
-  const [url, setUrl] = useState('');
-  const [key, setKey] = useState('');
-  const [hasKey, setHasKey] = useState(false);
-  const [auto, setAuto] = useState(true);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
   const [st, setSt] = useState<OmniStatus | null>(null);
   const [pod, setPodSt] = useState<PodStatus | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    const p = getPod(); setPodId(p.podId); setAuto(p.auto);
-    api.vault().then((v) => { const g = v.services.find((x) => x.service === 'gpu'); if (g) { setHasKey(g.hasKey); setSaved(g.hasKey && !!g.endpoint); setUrl(g.endpoint ?? ''); } }).catch(() => undefined);
-  }, []);
-  const target = () => (url.trim() || (podId.trim() ? `https://${podId.trim()}-8000.proxy.runpod.net` : ''));
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [idle, setIdle] = useState<number | null>(null);
 
   const poll = useCallback(async () => {
-    const s = await omniStatus(); setSt(s);
-    const p = getPod(); if (p.podId) setPodSt(await podCall('status', p.podId));
+    const s = await omniStatus(); setSt(s); setIdle(s?.idle_in_sec ?? null);
+    const p = getPod();
+    if (!s && p.podId) setPodSt(await podCall('status', p.podId)); else if (s) setPodSt(null);
+    if (!s) { const g = await ensureGpu(); setConfigured(!!g); } else setConfigured(true);
   }, []);
   useEffect(() => { void poll(); const id = window.setInterval(() => void poll(), 5000); return () => window.clearInterval(id); }, [poll]);
+  useEffect(() => { const id = window.setInterval(() => setIdle((v) => (v === null ? v : Math.max(0, v - 1))), 1000); return () => window.clearInterval(id); }, []);
 
-  const connect = async () => {
-    const ep = target();
-    if (!ep) { setMsg({ ok: false, text: kh ? 'សូមដាក់ Pod ID ឬ API URL សិន។' : 'Enter the Pod ID or API URL first.' }); return; }
-    if (!key.trim() && !hasKey) { setMsg({ ok: false, text: kh ? 'សូមដាក់ API Key (ដូច ATOM_KEY លើ Pod)។' : 'Enter the API key (same as ATOM_KEY on the Pod).' }); return; }
-    setBusy(true); setMsg(null);
-    try {
-      setPod({ podId: podId.trim(), auto });
-      const r = await api.saveVault('gpu', key.trim(), ep);
-      setKey(''); setHasKey(true); setSaved(true); setUrl(ep);
-      clearGpu(); const g = await ensureGpu(true);
-      const s = await omniStatus(); setSt(s);
-      setMsg(g && s ? { ok: true, text: `${kh ? 'ភ្ជាប់បាន' : 'Connected'} · ${s.gpu}` } : { ok: false, text: r.message || (kh ? 'រក្សាទុកហើយ ប៉ុន្តែ Pod មិនទាន់ឆ្លើយ (ប្រហែលបិទ ឬកំពុងចាប់ផ្តើម)។ ការងារបន្ទាប់នឹងបើក Pod ស្វ័យប្រវត្តិ។' : 'Saved, but the Pod does not answer yet (off or starting). The next job wakes it automatically.') });
-    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : 'Failed' }); }
-    setBusy(false);
-  };
-  const power = async (a: 'start' | 'stop') => { const id = podId.trim(); if (!id) return; setBusy(true); const r = await podCall(a, id); setPodSt(r); setBusy(false); };
-
+  const power = async (a: 'start' | 'stop') => { const id = getPod().podId; if (!id) return; setBusy(true); setPodSt(await podCall(a, id)); setBusy(false); };
   const vramPct = pct(st?.vram_used_gb ?? undefined, st?.vram_total_gb ?? undefined);
   const diskPct = pct(st?.disk_used_gb, st?.disk_total_gb);
-  const gpuPct = Math.round(st?.gpu_util ?? pod?.gpuPct ?? 0);
-  const active = st && st.state !== 'idle';
-  const detail = !st || !active ? '' : st.state === 'image' ? `${kh ? 'Scene' : 'Scene'} ${Math.min(st.total ?? 0, (st.step ?? 0) + 1)}/${st.total ?? '?'}` : st.state === 'music' ? `${st.step ?? '?'}/7` : `${Math.round(st.percent ?? 0)}%${st.title ? ` · ${st.title}` : ''}`;
-  const off = !st && pod?.ok && pod.state !== 'RUNNING';
+  const gpuPct = Math.round(st?.gpu_util ?? 0);
+  const active = !!st && st.state !== 'idle';
+  const online = !!st;
+  const detail = !active || !st ? '' : st.state === 'image' ? `Scene ${Math.min(st.total ?? 0, (st.step ?? 0) + 1)}/${st.total ?? '?'}` : st.state === 'music' ? `${st.step ?? '?'}/7` : `${Math.round(st.percent ?? 0)}%${st.title ? ` · ${st.title}` : ''}`;
+  const countdown = !online ? '—' : st?.auto_stop === false ? (kh ? 'បិទ (OFF)' : 'OFF') : idle === null ? (kh ? 'ផ្អាក · កំពុងធ្វើការ' : 'Paused · job running') : mmss(idle);
+  const jobs = st?.jobs ?? [];
   return <section className="cc-block cc-video">
-    <div className="cc-title"><Cpu size={15} /><strong>Atom GPU Engine</strong><span className={`cc-dot ${st ? 'on' : busy ? 'wait' : ''}`} /></div>
-    <input className="studio-input" aria-label="Pod ID" placeholder={kh ? 'Pod ID (ឧ. abc123xyz)' : 'Pod ID (e.g. abc123xyz)'} value={podId} autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={(e) => { setPodId(e.target.value); setUrl(''); }} />
-    <input className="studio-input" type="url" inputMode="url" aria-label="API URL" placeholder={kh ? 'ឬ API URL (https://…-8000.proxy.runpod.net)' : 'or API URL (https://…-8000.proxy.runpod.net)'} value={url} autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={(e) => setUrl(e.target.value)} />
-    <SecretInput value={key} onChange={setKey} placeholder={hasKey ? (kh ? '•••• រក្សាទុកក្នុង Vault (វាយថ្មីដើម្បីប្តូរ)' : '•••• stored in the Vault (type a new one to replace)') : 'API Key (ATOM_KEY)'} label="API key" />
-    <p className="access-help">{kh ? 'GPU តែមួយ (RunPod Omni-Worker) សម្រាប់ Image Engine, Music Engine និង Timeline Render។ API Key ត្រូវបានអ៊ីនគ្រីប AES-256 ក្នុង Vault ហើយមិនត្រូវបានបង្ហាញម្តងទៀត ឬរក្សាក្នុងកម្មវិធីទេ។' : 'One GPU (RunPod Omni-Worker) for Image Engine, Music Engine and Timeline Render. The key is AES-256 encrypted in the Vault and never shown again or stored in the app.'}</p>
-    <label className="access-help" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); setPod({ podId: podId.trim(), auto: e.target.checked }); }} />
-      {kh ? 'Auto-Start / Auto-Stop (បើកជាលំនាំដើម): បើក Pod ពេលចាប់ផ្តើមការងារ ហើយបិទអូតូពេលចប់ (កុំពុងចាក់សោទូរស័ព្ទក៏បាន)' : 'Auto-Start / Auto-Stop (ON by default): wakes the Pod for a job and stops it when the queue is empty, even if the phone is locked'}
-    </label>
-    <button type="button" className="access-test" onClick={() => void connect()} disabled={busy}><Plug size={14} /> {busy ? (kh ? 'កំពុងភ្ជាប់…' : 'Connecting…') : saved ? (kh ? 'រក្សាទុក & Connect' : 'Save & Connect') : 'Connect'}</button>
-    {podId.trim() && <div className="flex gap-2">
-      <button type="button" className="access-test" disabled={busy} onClick={() => void power('start')}>{kh ? 'បើក Pod' : 'Start Pod'}</button>
-      <button type="button" className="access-test" disabled={busy} onClick={() => void power('stop')}>{kh ? 'បិទ Pod' : 'Stop Pod'}</button>
-    </div>}
-    {msg && <div className={`access-status ${msg.ok ? 'ok' : 'bad'}`}>{msg.text}</div>}
-
+    <div className="cc-title"><Cpu size={15} /><strong>Atom Monitor</strong><span className={`cc-dot ${online ? 'on' : busy ? 'wait' : ''}`} /></div>
+    <p className="access-help" style={{ marginTop: 0 }}>GPU Performance</p>
+    {configured === false && !online && <p className="access-help">{kh ? 'មិនទាន់ភ្ជាប់ — ដំឡើងក្នុង Settings → API Key Vault → Atom GPU Engine។' : 'Not connected — set it up in Settings → API Key Vault → Atom GPU Engine.'}</p>}
     <div className="performance-panel cc-monitor">
       <div className="performance-heading"><h3>{t.performance}</h3><Gauge size={19} /></div>
-      <small className="cc-live"><strong>{off ? '○ Not connected (Pod off)' : badge(kh, st, false)}</strong>{detail ? ` · ${detail}` : ''}</small>
+      <small className="cc-live"><strong>{badge(kh, st)}</strong>{detail ? ` · ${detail}` : ''}{!online && pod?.ok && pod.state ? ` · RunPod: ${pod.state}` : ''}</small>
       <div className="gpu-monitor-grid">
-        <article><span>{st?.gpu ?? pod?.gpu ?? 'GPU'}</span><strong>{st || pod?.ok ? `${gpuPct}%` : '—'}</strong><small>GPU</small><div className="usage-bar"><i style={{ width: `${gpuPct}%` }} /></div></article>
+        <article><span>{st?.gpu ?? pod?.gpu ?? 'GPU'}</span><strong>{online ? `${gpuPct}%` : '—'}</strong><small>GPU</small><div className="usage-bar"><i style={{ width: `${gpuPct}%` }} /></div></article>
         <article><span>VRAM</span><strong>{gbText(st?.vram_total_gb ?? undefined)}</strong><small>{st?.vram_used_gb != null ? `${gbText(st.vram_used_gb)} ${kh ? 'កំពុងប្រើ' : 'used'}` : t.vram}</small><div className="usage-bar"><i style={{ width: `${vramPct}%` }} /></div></article>
-        <article><span>{t.storage}</span><strong>{gbText(st?.disk_total_gb)}</strong><small>{st ? `${gbText(st.disk_used_gb)} ${kh ? 'កំពុងប្រើ' : 'used'}` : t.storage}</small><div className="usage-bar"><i style={{ width: `${diskPct}%` }} /></div></article>
+        <article><span>/workspace {t.storage}</span><strong>{gbText(st?.disk_total_gb)}</strong><small>{st ? `${gbText(st.disk_used_gb)} ${kh ? 'កំពុងប្រើ' : 'used'}` : t.storage}</small><div className="usage-bar"><i style={{ width: `${diskPct}%` }} /></div></article>
+        <article><span>{kh ? 'Pod' : 'Pod'}</span><strong>{online ? 'Online' : 'Offline'}</strong><small>{online ? (kh ? 'កំពុងដំណើរការ' : 'Running') : (kh ? 'បិទ ឬមិនទាន់ភ្ជាប់' : 'Off or not connected')}</small></article>
+        <article><span>Auto-Stop</span><strong>{countdown}</strong><small>{kh ? 'រាប់ថយក្រោយពេលទំនេរ' : 'Idle countdown'}</small></article>
         <article><span>{kh ? 'AI model សកម្ម' : 'Active AI model'}</span><strong className="cc-model">{active ? st?.model ?? '—' : '—'}</strong></article>
         <article><span>{t.activeTasks}</span><strong>{String(st?.active_tasks ?? 0).padStart(2, '0')}</strong><div className="task-pips">{[0, 1, 2].map((i) => <i key={i} style={{ opacity: (st?.active_tasks ?? 0) > i ? 1 : 0.2 }} />)}</div></article>
       </div>
+      <div style={{ marginTop: 10 }}>
+        <small className="cc-live"><strong>{kh ? 'ជួរការងារ GPU' : 'GPU job queue'}</strong></small>
+        {jobs.length === 0 ? <p className="access-help">{kh ? 'គ្មានការងារ' : 'No jobs yet'}</p> : <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'grid', gap: 6 }}>
+          {jobs.map((j) => <li key={`${j.kind}-${j.id}`} className="access-help" style={{ display: 'flex', gap: 8, justifyContent: 'space-between', margin: 0 }}>
+            <span>{j.status === 'RUNNING' ? '▶' : j.status === 'QUEUED' ? '⏳' : j.status === 'COMPLETED' ? '✓' : '✕'} {KIND[j.kind]?.[language] ?? j.kind}{j.stage ? ` · ${j.stage}` : ''}</span>
+            <span>{j.status === 'RUNNING' ? `${Math.round(j.percent ?? 0)}%` : j.status}</span>
+          </li>)}
+        </ul>}
+      </div>
     </div>
+    {getPod().podId && <div className="flex gap-2">
+      <button type="button" className="access-test" disabled={busy || online} onClick={() => void power('start')}>{kh ? 'បើក Pod' : 'Start Pod'}</button>
+      <button type="button" className="access-test" disabled={busy || active} onClick={() => void power('stop')}>{kh ? 'បិទ Pod' : 'Stop Pod'}</button>
+    </div>}
   </section>;
 }
 
@@ -227,8 +213,7 @@ export function CommandCenter({ open, onClose, t, language, show }: { open: bool
   return <div className="modal-backdrop" onMouseDown={onClose}><aside className="command-drawer" onMouseDown={(e) => e.stopPropagation()}>
     <div className="drawer-header"><h2>{t.commandCenter}</h2><button type="button" className="icon-button" onClick={onClose} aria-label={t.close}><X size={20} /></button></div>
     <div className="drawer-content">
-      {show.voice && <section className="cc-block"><div className="cc-title"><Mic2 size={15} /><strong>{c.voice}</strong></div><p className="access-help">{language === 'kh' ? 'Voice key (Premium Voice) ត្រូវរក្សាទុកក្នុង Settings → API Key Vault (អ៊ីនគ្រីប)។ បើគ្មាន key ប្រើ gTTS ឥតគិតថ្លៃ។' : 'Voice keys live in Settings → API Key Vault (encrypted). With no key the free gTTS voice is used.'}</p></section>}
-      <AtomGpuPanel language={language} t={t} />
+      <AtomMonitorPanel language={language} t={t} />
       {show.video && <EnginePanel kind="video" open={open} t={t} c={c} />}
     </div>
     <button type="button" className="drawer-save" onClick={onClose}><Check size={16} /> {t.done}</button>

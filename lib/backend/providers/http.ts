@@ -5,7 +5,7 @@ import { ProviderConfigError, type Provider } from './types';
 import { toResult } from './runpod';
 
 /**
- * Generic "bring your own GPU" provider. The endpoint (URL + key) comes from the Command Center and is stored with the job.
+ * Generic "bring your own GPU" provider. The endpoint (URL + key) comes from the Video Engine panel in Atom Monitor and is stored with the job.
  * Works with anything that follows the RunPod-style contract:
  *   POST {base}/run            { input, webhook? } -> { id }
  *   GET  {base}/status/{id}    -> { status: COMPLETED|FAILED|IN_QUEUE|IN_PROGRESS, output: { url }, error? }
@@ -14,7 +14,7 @@ import { toResult } from './runpod';
  */
 function endpointOf(options: Record<string, unknown>): Endpoint {
   const ep = options._endpoint as Endpoint | undefined;
-  if (!ep?.url) throw new ProviderConfigError('No GPU endpoint set. Open Command Center, enter the Video Engine URL and press Connect.');
+  if (!ep?.url) throw new ProviderConfigError('No GPU endpoint set. Open Atom Monitor (Video Engine) or Settings → API Key Vault and set the Video Engine URL.');
   return { url: normalizeBase(ep.url), key: ep.key };
 }
 

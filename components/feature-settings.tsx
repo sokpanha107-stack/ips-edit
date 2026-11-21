@@ -66,7 +66,7 @@ export function FeatureSettings({ features, onChange }: { features: FeatureCfg[]
 
   return <div className="settings-block" id="menu-features">
     <div className="settings-title"><SlidersHorizontal size={17} /><strong>Menu &amp; features</strong></div>
-    <p className="access-help">Switch a feature off to hide it everywhere (sidebar and Command Center). Press and hold a row, then drag it to where you want.</p>
+    <p className="access-help">Switch a feature off to hide it everywhere (sidebar and Atom Monitor). Press and hold a row, then drag it to where you want. Video Engine (the standalone video server) is OFF by default; switch it on only if you use it. When on, it also appears in Atom Monitor.</p>
     <ul className="feat-list" ref={listRef}>
       {features.map((f, i) => <li key={f.id} style={slide(i)}
         className={`feat-row ${f.on ? '' : 'off'} ${drag?.from === i ? 'dragging' : ''} ${drag && drag.from !== i ? 'sliding' : ''}`}

@@ -14,3 +14,7 @@ revoke all on table public.gpu_jobs from anon, public;
 grant select, insert, update, delete on table public.gpu_jobs to authenticated;
 drop policy if exists "gpu_jobs_own" on public.gpu_jobs;
 create policy "gpu_jobs_own" on public.gpu_jobs for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- v2.4b: allow Voice-clone jobs (safe to run again)
+alter table public.gpu_jobs drop constraint if exists gpu_jobs_kind_check;
+alter table public.gpu_jobs add constraint gpu_jobs_kind_check check (kind in ('image','music','video','voice'));

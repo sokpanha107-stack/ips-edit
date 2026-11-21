@@ -39,10 +39,12 @@ export type EngineRoute = 'image' | 'music' | 'render';
 export const PREFIX: Record<EngineRoute, string> = { image: '/image', music: '/music', render: '/render' };
 
 /** Authenticated GET /status of the Omni-Worker (single dynamic GPU Performance Monitor). */
+export interface OmniJob { kind: 'image' | 'music' | 'render' | 'voice'; id: string; status: string; done: number | null; total: number | null; percent: number | null; stage: string | null }
 export interface OmniStatus {
-  ok: boolean; state: 'idle' | 'image' | 'music' | 'render'; model: string | null; loaded?: string | null; step: number | null; total: number | null; percent: number | null; title: string | null;
+  ok: boolean; state: 'idle' | 'image' | 'music' | 'render' | 'voice'; model: string | null; loaded?: string | null; step: number | null; total: number | null; percent: number | null; title: string | null;
   gpu: string; gpu_util: number | null; vram_total_gb: number | null; vram_used_gb: number | null; disk_total_gb: number; disk_used_gb: number; disk_free_gb?: number;
-  active_tasks: number; queued?: { image: number; music: number; render: number }; uptime?: number;
+  active_tasks: number; queued?: { image: number; music: number; render: number; voice?: number }; uptime?: number;
+  idle_in_sec?: number | null; auto_stop?: boolean; jobs?: OmniJob[];
 }
 export async function omniStatus(): Promise<OmniStatus | null> {
   const g = await ensureGpu(); if (!g) return null;
