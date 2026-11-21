@@ -14,7 +14,7 @@ Pipeline (one scene at a time, strictly one model on the GPU at any moment):
   4. FFmpeg -> 01.mp3, 02.mp3 ... (mono 44.1 kHz 192 kbps, tool tags stripped, only the locked brand is written as artist/comment)
 Inside the Omni-Worker the global GPU lock + the watcher upload each mp3 to Document (signed URLs), notify, then delete the temp files.
 """
-import asyncio, gc, json, os, queue, shutil, subprocess, threading, time, uuid
+import asyncio, gc, json, os, queue, re, shutil, subprocess, threading, time, uuid
 from pathlib import Path
 
 WORK = Path(os.environ.get('IPS_VOICE_DIR', '/tmp/atom_voice')); WORK.mkdir(parents=True, exist_ok=True)
@@ -105,11 +105,27 @@ def base_speech(text: str, lang: str, gender: str, out: Path) -> str:
     raise RuntimeError('No base TTS worked (' + '; '.join(err) + ')')
 
 
+_SV_FLAGS: dict = {}
+def seedvc_cmd(sv: str, args: list) -> list:
+    """Builds the Seed-VC command, dropping any --flag the installed inference.py does not know (repo versions differ), so a renamed option never kills a job."""
+    if sv not in _SV_FLAGS:
+        try:
+            h = subprocess.run(['python', 'inference.py', '--help'], cwd=sv, capture_output=True, text=True, timeout=120)
+            _SV_FLAGS[sv] = set(re.findall(r'--[a-z0-9][a-z0-9-]*', (h.stdout or '') + (h.stderr or ''))) if h.returncode == 0 else set()
+        except Exception: _SV_FLAGS[sv] = set()  # noqa: BLE001
+    known = _SV_FLAGS[sv]; out = ['python', 'inference.py']; i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith('--') and known and a not in known: i += 2; continue   # unknown flag + its value
+        out.append(a); i += 1
+    return out
+
+
 # ---------------------------------------------------------------- stage 3: Seed-VC (speech mode) in its own process
 def convert(base: Path, voice: Path, work: Path) -> Path:
     sv = os.environ.get('SEEDVC_DIR', '/workspace/models/seed-vc'); outd = work / 'sv'; shutil.rmtree(outd, ignore_errors=True)
-    run(['python', 'inference.py', '--source', str(base), '--target', str(voice), '--output', str(outd), '--diffusion-steps', '30', '--length-adjust', '1.0',
-         '--inference-cfg-rate', '0.7', '--f0-condition', 'False', '--auto-f0-adjust', 'False', '--fp16', 'True'], cwd=sv)
+    run(seedvc_cmd(sv, ['--source', str(base), '--target', str(voice), '--output', str(outd), '--diffusion-steps', '30', '--length-adjust', '1.0',
+         '--inference-cfg-rate', '0.7', '--f0-condition', 'False', '--auto-f0-adjust', 'False', '--fp16', 'True']), cwd=sv)
     got = sorted(outd.glob('*.wav'), key=lambda x: x.stat().st_mtime)
     if not got: raise RuntimeError('Seed-VC produced no audio')
     return got[-1]

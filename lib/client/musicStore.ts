@@ -20,14 +20,23 @@ async function readManifest(): Promise<Manifest | null> {
 async function writeManifest(m: Manifest): Promise<boolean> {
   try { const u = await uid(); if (!u) return false; return !(await browserClient().storage.from(BUCKET).upload(`${u}/music-library/manifest.json`, new Blob([JSON.stringify(m)], { type: 'application/json' }), { upsert: true, contentType: 'application/json' })).error; } catch { return false; }
 }
+/** Read-modify-write with verify: two devices writing at once could drop a track, so after writing we re-read and retry (max 4) until our change is really in the manifest. */
+async function updateManifest(change: (m: Manifest) => Manifest, applied: (m: Manifest) => boolean): Promise<boolean> {
+  for (let i = 0; i < 4; i++) {
+    const cur = await readManifest(); if (!cur) return false;
+    if (!(await writeManifest(change(cur)))) return false;
+    await new Promise((r) => setTimeout(r, 150 + Math.random() * 350));
+    const chk = await readManifest(); if (chk && applied(chk)) return true;
+  }
+  return false;
+}
 async function pushTrack(meta: MusicMeta, blob: Blob): Promise<boolean> {
   try {
     const u = await uid(); if (!u) return false; const ext = meta.ext ?? 'mp3';
     const up = await browserClient().storage.from(BUCKET).upload(`${u}/music-library/${meta.id}.${ext}`, blob, { upsert: true, contentType: blob.type || 'audio/mpeg' });
     if (up.error) return false;
-    const m = (await readManifest()) ?? { tracks: [] };
-    m.tracks = [...m.tracks.filter((t) => t.id !== meta.id), { id: meta.id, name: meta.name, seconds: meta.seconds, size: meta.size, createdAt: meta.createdAt, ext }];
-    return writeManifest(m);
+    const entry = { id: meta.id, name: meta.name, seconds: meta.seconds, size: meta.size, createdAt: meta.createdAt, ext };
+    return updateManifest((m) => ({ ...m, tracks: [...m.tracks.filter((t) => t.id !== meta.id), entry] }), (m) => m.tracks.some((t) => t.id === meta.id));
   } catch { return false; }
 }
 const DB = 'ips-music', STORE = 'tracks';
@@ -80,14 +89,14 @@ export async function deleteMusic(ids: string[]) {
     const u = await uid(); const man = await readManifest(); if (!u || !man) return;
     const gone = man.tracks.filter((t) => ids.includes(t.id));
     if (gone.length) await browserClient().storage.from(BUCKET).remove(gone.map((t) => `${u}/music-library/${t.id}.${t.ext}`));
-    await writeManifest({ tracks: man.tracks.filter((t) => !ids.includes(t.id)) });
+    await updateManifest((m) => ({ ...m, tracks: m.tracks.filter((t) => !ids.includes(t.id)) }), (m) => !m.tracks.some((t) => ids.includes(t.id)));
   } catch { /* the local delete already happened; the cloud copy is removed on the next try */ }
 }
 export async function renameMusic(id: string, name: string) {
   const clean = name.trim().slice(0, 80);
   const row = await run<Row | undefined>('readonly', (s) => s.get(id));
   if (row) await run('readwrite', (s) => s.put({ ...row, name: clean || row.name }));
-  const man = await readManifest(); if (man && clean) await writeManifest({ tracks: man.tracks.map((t) => (t.id === id ? { ...t, name: clean } : t)) });
+  const man = await readManifest(); if (man && clean) await updateManifest((m) => ({ ...m, tracks: m.tracks.map((t) => (t.id === id ? { ...t, name: clean } : t)) }), (m) => m.tracks.some((t) => t.id === id && t.name === clean));
 }
 const seconds = (file: Blob): Promise<number> => new Promise((res) => {
   const a = new Audio(); const url = URL.createObjectURL(file); a.preload = 'metadata'; a.src = url;

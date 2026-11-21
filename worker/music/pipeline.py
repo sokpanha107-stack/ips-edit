@@ -1,6 +1,6 @@
 """Atom Edit · Music Engine pipeline: ONE stage at a time, verify its output, free the GPU, then the next.
 Shared by music_api.py (Pod) and handler.py (Serverless). Signature Voice is mandatory: the AI guide vocal is never mixed."""
-import gc, json, os, shutil, subprocess, tempfile, time
+import gc, hashlib, json, os, re, shutil, subprocess, tempfile, time
 from pathlib import Path
 import numpy as np
 import soundfile as sf
@@ -57,6 +57,22 @@ def separate(raw: Path, work: Path):
     return work / 'instrumental.wav', work / 'temp_guide_vocal.wav'
 
 
+_SV_FLAGS: dict = {}
+def seedvc_cmd(sv: str, args: list) -> list:
+    """Builds the Seed-VC command, dropping any --flag the installed inference.py does not know (repo versions differ), so a renamed option never kills a job."""
+    if sv not in _SV_FLAGS:
+        try:
+            h = subprocess.run(['python', 'inference.py', '--help'], cwd=sv, capture_output=True, text=True, timeout=120)
+            _SV_FLAGS[sv] = set(re.findall(r'--[a-z0-9][a-z0-9-]*', (h.stdout or '') + (h.stderr or ''))) if h.returncode == 0 else set()
+        except Exception: _SV_FLAGS[sv] = set()  # noqa: BLE001
+    known = _SV_FLAGS[sv]; out = ['python', 'inference.py']; i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith('--') and known and a not in known: i += 2; continue   # unknown flag + its value
+        out.append(a); i += 1
+    return out
+
+
 # ---------- stage 3: Signature Voice (Seed-VC for audio samples, RVC for .pth) ----------
 def clone(guide: Path, voice: Path, index: Path | None, pitch: int, work: Path):
     out = work / 'signature_vocal.wav'
@@ -69,8 +85,8 @@ def clone(guide: Path, voice: Path, index: Path | None, pitch: int, work: Path):
         run(cmd, cwd=rvc)
     else:
         sv = os.environ.get('SEEDVC_DIR', '/opt/seed-vc')
-        run(['python', 'inference.py', '--source', str(guide), '--target', str(voice), '--output', str(work / 'sv_out'), '--diffusion-steps', '30',
-             '--f0-condition', 'True', '--auto-f0-adjust', 'False', '--semi-tone-shift', str(pitch), '--fp16', 'True'], cwd=sv)
+        run(seedvc_cmd(sv, ['--source', str(guide), '--target', str(voice), '--output', str(work / 'sv_out'), '--diffusion-steps', '30',
+             '--f0-condition', 'True', '--auto-f0-adjust', 'False', '--semi-tone-shift', str(pitch), '--fp16', 'True']), cwd=sv)
         produced = sorted((work / 'sv_out').glob('*.wav'), key=lambda x: x.stat().st_mtime)
         if not produced: raise RuntimeError('Seed-VC produced no audio')
         shutil.move(str(produced[-1]), out)
@@ -123,24 +139,55 @@ def master(inst: Path, vocal: Path, p: dict, out_mp3: Path, work: Path):
     return dur
 
 
+CKPT_ROOT = Path(os.environ.get('ATOM_STATE', '/workspace/.atom')) / 'ckpt'
+
+
+def _ckpt_dir(p: dict, voice: Path) -> Path:
+    """Stable per-song folder (same lyrics/style/seed/voice => same folder), so a crashed or restarted job continues from the last finished stage."""
+    key = hashlib.sha1(json.dumps([p, voice.name, voice.stat().st_size if voice.exists() else 0], sort_keys=True, default=str).encode()).hexdigest()[:16]
+    d = CKPT_ROOT / f'music_{key}'; d.mkdir(parents=True, exist_ok=True); return d
+
+
+def _ckpt_gc(max_age_h: float = 24):
+    try:
+        for d in CKPT_ROOT.glob('music_*'):
+            if time.time() - d.stat().st_mtime > max_age_h * 3600: shutil.rmtree(d, ignore_errors=True)
+    except Exception: pass  # noqa: BLE001
+
+
+def _ok(f: Path) -> bool:
+    try: return f.exists() and f.stat().st_size > 4096
+    except OSError: return False
+
+
 def render(p: dict, voice: Path, index: Path | None, out_mp3: Path, report, cancelled=lambda: False):
-    """report(step, percent, log). Raises on any failure. Models are always unloaded between stages."""
-    work = Path(tempfile.mkdtemp(prefix='music_'))
+    """report(step, percent, log). Raises on any failure. Models are always unloaded between stages.
+    Checkpoints: each finished stage (raw mix, stems, signature vocal) stays on /workspace until the mp3 is made, so a retry skips what is already done."""
+    _ckpt_gc()
+    work = _ckpt_dir(p, voice); done = False
     try:
         seed = p.get('seed')
         def chk():
             if cancelled(): raise Cancelled()
-        report(3, 15, '● [3/7] ACE-Step 1.5 កំពុងតែងភ្លេង និងទំនុកច្រៀង (3:33)...'); chk()
-        raw = compose(p, work / 'raw_mix.wav', seed); report(3, 45, 'raw_mix.wav OK'); chk()
-        report(4, 45, '● [4/7] Demucs កំពុងបំបែកសាច់ភ្លេងសុទ្ធ និងដកសំឡេង AI ចេញ...')
-        inst, guide = separate(raw, work); report(4, 60, 'stems OK'); chk()
-        report(5, 60, '● [5/7] កំពុងបំពាក់សំឡេង Signature របស់អ្នក ១០០% (Seed-VC / RVC)...')
-        vocal = clone(guide, voice, index, int(p.get('pitch_shift') or 0), work); report(5, 80, 'signature_vocal.wav OK · AI guide vocal deleted'); chk()
+        raw = work / 'raw_mix.wav'; inst = work / 'instrumental.wav'; guide = work / 'temp_guide_vocal.wav'; vocal = work / 'signature_vocal.wav'
+        if not _ok(vocal):
+            if not (_ok(inst) and _ok(guide)):
+                if not _ok(raw):
+                    report(3, 15, '● [3/7] ACE-Step 1.5 កំពុងតែងភ្លេង និងទំនុកច្រៀង (3:33)...'); chk()
+                    raw = compose(p, raw, seed); report(3, 45, 'raw_mix.wav OK'); chk()
+                else: report(3, 45, 'raw_mix.wav (checkpoint, skipped)')
+                report(4, 45, '● [4/7] Demucs កំពុងបំបែកសាច់ភ្លេងសុទ្ធ និងដកសំឡេង AI ចេញ...')
+                inst, guide = separate(raw, work); report(4, 60, 'stems OK'); chk()
+            else: report(4, 60, 'stems (checkpoint, skipped)')
+            report(5, 60, '● [5/7] កំពុងបំពាក់សំឡេង Signature របស់អ្នក ១០០% (Seed-VC / RVC)...')
+            vocal = clone(guide, voice, index, int(p.get('pitch_shift') or 0), work); report(5, 80, 'signature_vocal.wav OK · AI guide vocal deleted'); chk()
+        else: report(5, 80, 'signature_vocal.wav (checkpoint, skipped)')
         report(6, 80, '● [6/7] កំពុង Auto-Mix, ចាក់សោរ 3:33, Master (-14 LUFS) និងបង្កើតឯកសារ .MP3...')
-        dur = master(inst, vocal, p, out_mp3, work); report(6, 92, f'mp3 OK · {dur:.1f}s')
+        dur = master(inst, vocal, p, out_mp3, work); report(6, 92, f'mp3 OK · {dur:.1f}s'); done = True
         return dur
     finally:
-        shutil.rmtree(work, ignore_errors=True); free_gpu()
+        if done: shutil.rmtree(work, ignore_errors=True)   # success: temp files are removed; on failure/cancel the checkpoint stays for a retry (auto-deleted after 24 h)
+        free_gpu()
 
 
 def upload(signed_url: str, mp3: Path, callback_url: str, token: str) -> bool:
