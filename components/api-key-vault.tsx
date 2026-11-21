@@ -90,7 +90,7 @@ function parsePod(v: string): { podId: string; url: string } {
   return { podId: t, url: `https://${t}-8000.proxy.runpod.net` };
 }
 
-/** The ONE GPU connection: RunPod API key + Pod ID/URL + ATOM_KEY. Atom Monitor and every engine read from here. */
+/** The ONE GPU connection: RunPod API key + Pod ID/URL + ATOM_KEY. Performance Monitor and every engine read from here. */
 function GpuCard({ runpod, gpu, onChange }: { runpod?: VaultService; gpu?: VaultService; onChange: (v: VaultService[]) => void }) {
   const [rpKey, setRpKey] = useState('');
   const [atomKey, setAtomKey] = useState('');
@@ -131,7 +131,7 @@ function GpuCard({ runpod, gpu, onChange }: { runpod?: VaultService; gpu?: Vault
 
   return <section className="border-b border-[var(--line)] py-4 text-[var(--ink)]">
     <div className="flex items-center gap-2"><KeyRound size={16} className="text-[var(--amber-deep)]" /><h4 className="text-sm font-semibold">Atom GPU Engine · RunPod RTX A6000</h4><span className={`ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${pill.c}`}>{pill.t}</span></div>
-    <p className="mt-1 text-xs leading-relaxed text-[var(--ink-soft)]">The single source of truth for the GPU. One Pod runs Image, Music, Voice Clone and Timeline Render. Atom Monitor only displays live status. Keys are stored encrypted; the browser only gets a short-lived token.</p>
+    <p className="mt-1 text-xs leading-relaxed text-[var(--ink-soft)]">The single source of truth for the GPU. One Pod runs Image, Music, Voice Clone and Timeline Render. Performance Monitor only displays live status. Keys are stored encrypted; the browser only gets a short-lived token.</p>
     <p className="mt-1 text-[11px] text-[var(--amber-deep)]">Needed for: Image · Music · Voice Clone · Render</p>
 
     <label className={lab}>RunPod API key</label>

@@ -12,7 +12,7 @@ export const videoCopy = {
     noAudioFound: 'No audio files found in that selection.', unreadable: 'Could not read', mismatch: (a: number, s: number) => `Audio has ${a} files but scenes is set to ${s}`,
     rendering: 'Rendering', of: 'of', done: 'done', online: 'GPU online', offline: 'GPU offline', checking: 'Checking GPU…', resume: 'Resume',
     paused: (saved: number, next: number) => `Connection lost. ${saved} scenes are saved. Resume continues from scene ${next}.`,
-    stillOffline: 'The GPU worker is still offline. Check Atom Monitor, then try again.',
+    stillOffline: 'The GPU worker is still offline. Check Performance Monitor, then try again.',
     anchorMismatch: (a: number, s: number) => `KH timing has ${a} scenes but scenes is set to ${s}`, anchorFromKh: (n: number) => `Timing anchor updated from KH voice (${n} scenes)`,
   },
   kh: {
@@ -21,7 +21,7 @@ export const videoCopy = {
     noAudioFound: 'រកមិនឃើញឯកសារសំឡេងទេ។', unreadable: 'អានមិនបាន', mismatch: (a: number, s: number) => `សំឡេងមាន ${a} ឯកសារ ប៉ុន្តែអ្នកកំណត់ ${s} scene`,
     rendering: 'កំពុងកិន', of: '/', done: 'រួច', online: 'GPU ភ្ជាប់', offline: 'GPU ដាច់', checking: 'កំពុងពិនិត្យ GPU…', resume: 'Resume',
     paused: (saved: number, next: number) => `ដាច់ទំនាក់ទំនង។ រក្សាទុក ${saved} scene រួច។ Resume នឹងបន្តពី scene ${next}។`,
-    stillOffline: 'ម៉ាស៊ីន GPU នៅតែដាច់។ សូមពិនិត្យ Atom Monitor ហើយសាកល្បងម្តងទៀត។',
+    stillOffline: 'ម៉ាស៊ីន GPU នៅតែដាច់។ សូមពិនិត្យ Performance Monitor ហើយសាកល្បងម្តងទៀត។',
     anchorMismatch: (a: number, s: number) => `ពេលវេលា KH មាន ${a} scene ប៉ុន្តែអ្នកកំណត់ ${s}`, anchorFromKh: (n: number) => `បានធ្វើបច្ចុប្បន្នភាពស្តង់ដារពេលវេលាពីសំឡេង KH (${n} scene)`,
   },
 } as const;

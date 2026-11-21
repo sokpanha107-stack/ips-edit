@@ -147,7 +147,7 @@ const badge = (kh: boolean, s: OmniStatus | null) => {
 };
 const mmss = (n: number) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
 
-/** Atom Monitor: LIVE TELEMETRY ONLY. All connection fields live in Settings → API Key Vault → Atom GPU Engine. */
+/** Performance Monitor: LIVE TELEMETRY ONLY. All connection fields live in Settings → API Key Vault → Atom GPU Engine. */
 function AtomMonitorPanel({ language, t }: { language: 'en' | 'kh'; t: Labels }) {
   const kh = language === 'kh';
   const [st, setSt] = useState<OmniStatus | null>(null);
@@ -175,8 +175,7 @@ function AtomMonitorPanel({ language, t }: { language: 'en' | 'kh'; t: Labels })
   const countdown = !online ? '—' : st?.auto_stop === false ? (kh ? 'បិទ (OFF)' : 'OFF') : idle === null ? (kh ? 'ផ្អាក · កំពុងធ្វើការ' : 'Paused · job running') : mmss(idle);
   const jobs = st?.jobs ?? [];
   return <section className="cc-block cc-video">
-    <div className="cc-title"><Cpu size={15} /><strong>Atom Monitor</strong><span className={`cc-dot ${online ? 'on' : busy ? 'wait' : ''}`} /></div>
-    <p className="access-help" style={{ marginTop: 0 }}>GPU Performance</p>
+    <div className="cc-title"><Cpu size={15} /><strong>Performance Monitor</strong><span className={`cc-dot ${online ? 'on' : busy ? 'wait' : ''}`} /></div>
     {configured === false && !online && <p className="access-help">{kh ? 'មិនទាន់ភ្ជាប់ — ដំឡើងក្នុង Settings → API Key Vault → Atom GPU Engine។' : 'Not connected — set it up in Settings → API Key Vault → Atom GPU Engine.'}</p>}
     <div className="performance-panel cc-monitor">
       <div className="performance-heading"><h3>{t.performance}</h3><Gauge size={19} /></div>
