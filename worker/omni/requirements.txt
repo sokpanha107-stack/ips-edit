@@ -3,3 +3,4 @@
 -r ../render/requirements.txt
 -r ../music/requirements.txt
 -r ../voice/requirements.txt
+hf_transfer

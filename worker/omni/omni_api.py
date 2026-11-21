@@ -30,7 +30,7 @@ os.environ.setdefault('IPS_IMAGE_DIR', str(STATE / 'image')); os.environ.setdefa
 os.environ.setdefault('IPS_VOICE_DIR', str(STATE / 'voice'))
 os.environ.setdefault('MUSIC_TMP', str(STATE / 'music')); os.environ['MUSIC_KEY'] = ''   # auth is done once, here
 os.environ.setdefault('IPS_CACHE_DIR', '/workspace/.cache')
-os.environ.setdefault('HF_HOME', '/workspace/.cache/hf'); os.environ.setdefault('TORCH_HOME', '/workspace/.cache/torch')
+os.environ.setdefault('HF_HOME', '/workspace/models/hf_cache'); os.environ.setdefault('TORCH_HOME', '/workspace/models/torch_cache')
 for d in ('music', 'image', 'render', 'voice'): sys.path.insert(0, str(ROOT / d))
 
 from fastapi import FastAPI, Request                                       # noqa: E402

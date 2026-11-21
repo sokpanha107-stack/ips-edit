@@ -8,7 +8,7 @@ GET  /files/render/{name} -> the finished mp4 (unguessable id; no header needed)
 Jobs run one at a time in a background worker thread with a queue. (Celery would need a Redis broker; for one user on
 one machine an in-process queue gives the same behaviour: queued jobs, progress, cancel.)
 """
-import json, math, os, queue, re, shutil, subprocess, tempfile, threading, time, traceback, urllib.request, uuid
+import json, math, os, queue, re, shutil, subprocess, tempfile, threading, time, traceback, urllib.parse, urllib.request, uuid
 from pathlib import Path
 
 import numpy as np
@@ -25,10 +25,11 @@ except Exception:  # noqa: BLE001
 
 WORK = Path(os.environ.get('IPS_RENDER_DIR', tempfile.gettempdir())) / 'ips_render'
 OUT = WORK / 'out'
-FONT_CACHE = (MFX.CACHE / 'fonts') if MFX else WORK / 'fonts_cache'   # RunPod: /workspace/.cache/fonts survives Pod restarts
+FONT_CACHE = Path(os.environ['ATOM_FONTS_DIR']) if os.environ.get('ATOM_FONTS_DIR') else (Path('/workspace/models/fonts') if Path('/workspace').is_dir() else WORK / 'fonts_cache')   # filled by download_models.py; survives Pod restarts
 FONT_URLS = {   # best-effort downloads of the premium Khmer fonts (Google Fonts repository)
     'Kantumruy Pro': 'https://raw.githubusercontent.com/google/fonts/main/ofl/kantumruypro/KantumruyPro%5Bwght%5D.ttf',
     'Suwannaphum': 'https://raw.githubusercontent.com/google/fonts/main/ofl/suwannaphum/Suwannaphum-Regular.ttf',
+    'Noto Sans Khmer': 'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskhmer/NotoSansKhmer%5Bwdth%2Cwght%5D.ttf',
 }
 FALLBACK_FONTS = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf']
 
@@ -486,7 +487,7 @@ def ensure_fonts(dest: Path, wanted: str):
     FONT_CACHE.mkdir(parents=True, exist_ok=True)
     for fam, url in FONT_URLS.items():
         if fam.lower() != (wanted or '').lower(): continue
-        f = FONT_CACHE / url.rsplit('/', 1)[-1].replace('%5B', '[').replace('%5D', ']')
+        f = FONT_CACHE / urllib.parse.unquote(url.rsplit('/', 1)[-1])
         if not f.exists():
             try: urllib.request.urlretrieve(url, f)
             except Exception: continue   # noqa: BLE001
