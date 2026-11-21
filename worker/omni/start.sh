@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Atom Edit Omni-Worker on ONE RunPod Pod (RTX A6000 48 GB recommended; 24 GB works too). Image + Music + Voice Clone + Timeline Render in one server, port 8000.
+# Music Engine is paused unless you add ATOM_MUSIC=1 (see bottom). Voice Clone + Image + Render work without it.
 # Put this ONE line in the Pod's "Docker Command" (it runs again by itself on every restart):
 #   bash -c "[ -d /workspace/ips-edit ] && git -C /workspace/ips-edit pull -q || git clone -q https://github.com/sokpanha107-stack/ips-edit /workspace/ips-edit; ATOM_KEY=your-secret bash /workspace/ips-edit/worker/omni/start.sh"
 # Expose HTTP port 8000. URL = https://<pod-id>-8000.proxy.runpod.net . Use the SAME secret as the "Atom GPU Engine" API Key in the app.
@@ -16,18 +17,22 @@ V=/workspace/omni-venv
 . "$V/bin/activate"
 if [ ! -f "$V/.ready-b" ]; then
   pip install -q -r requirements.txt
-  [ -d "$ACESTEP_DIR" ] || git clone -q --depth 1 https://github.com/ace-step/ACE-Step "$ACESTEP_DIR"
   [ -d "$SEEDVC_DIR" ] || git clone -q --depth 1 https://github.com/Plachtaa/seed-vc "$SEEDVC_DIR"
-  [ -d "$RVC_DIR" ] || git clone -q --depth 1 https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI "$RVC_DIR"
-  pip install -q -e "$ACESTEP_DIR" || true
   pip install -q -r "$SEEDVC_DIR/requirements.txt" || true
-  pip install -q -r "$RVC_DIR/requirements.txt" || true
   python - <<'PY' || true
 from huggingface_hub import snapshot_download
 for m in ('depth-anything/Depth-Anything-V2-Small-hf', 'black-forest-labs/FLUX.2-klein-4B', 'facebook/mms-tts-khm', 'facebook/mms-tts-eng'):
-    try: snapshot_download(m)
+    try: snapshot_download(m, ignore_patterns=['flux-2-klein-4b.safetensors'] if 'FLUX' in m else None)   # skips the 7.75 GB single-file duplicate; diffusers reads the sub-folders
     except Exception as e: print('pre-download skipped:', m, str(e)[:120])
 PY
   touch "$V/.ready-b"
+fi
+# Music Engine (ACE-Step + Demucs + RVC) is PAUSED by default: nothing is installed or downloaded for it (saves ~10 GB + install time). Enable later with ATOM_MUSIC=1 in the Docker Command, then restart the Pod.
+if [ "${ATOM_MUSIC:-0}" = "1" ] && [ ! -f "$V/.music-ready" ]; then
+  [ -d "$ACESTEP_DIR" ] || git clone -q --depth 1 https://github.com/ace-step/ACE-Step "$ACESTEP_DIR"
+  [ -d "$RVC_DIR" ] || git clone -q --depth 1 https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI "$RVC_DIR"
+  pip install -q -e "$ACESTEP_DIR" || true
+  pip install -q -r "$RVC_DIR/requirements.txt" || true
+  touch "$V/.music-ready"
 fi
 exec uvicorn omni_api:app --host 0.0.0.0 --port 8000
